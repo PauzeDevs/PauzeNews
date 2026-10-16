@@ -37,7 +37,11 @@ class NewsCard(BoxLayout):
             self._bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(14)])
         self.bind(pos=self._sync_bg, size=self._sync_bg)
 
-        meta = f"{article.get('category', 'News')}  ·  {article.get('source', 'Source')}"
+        published = article.get("published", "")
+        meta_parts = [article.get("category", "News"), article.get("source", "Source")]
+        if published:
+            meta_parts.append(published)
+        meta = "  ·  ".join(meta_parts)
         self.add_widget(Label(text=meta, color=ACCENT, font_size="11sp", bold=True,
                               halign="left", valign="middle", size_hint_y=None, height=dp(18), text_size=(Window.width - dp(60), None)))
         title = Button(text=article.get("title", "Untitled"), color=TEXT, font_size="16sp",
