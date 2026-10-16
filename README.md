@@ -4,7 +4,7 @@
 
 ### The world, in context.
 
-A lightweight, Android-first news reader with a clean, gold-accented editorial interface.
+A lightweight, Android-first news reader with a matte graphite interface, cool-blue highlights, and glass-inspired story cards.
 
 <p>
   <a href="https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml"><img alt="Python tests" src="https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml/badge.svg?branch=main"></a>
@@ -30,7 +30,7 @@ A lightweight, Android-first news reader with a clean, gold-accented editorial i
 
 PauzeNews is a Python-first news reader built with **Kivy**. It brings topic-based headlines into one Android-friendly interface, with local search, bookmarks, cached stories, publisher attribution, and links to original articles.
 
-The interface uses a dark graphite background with restrained gold accents, generous spacing, and an editorial card layout.
+The interface uses a dark matte graphite background, restrained blue highlights, softly outlined glass-like panels, and compact horizontal story cards. The Android layout reserves extra space around system bars and renders a small first batch to keep startup lightweight.
 
 > **Development status:** Early development. A successful CI build does not replace testing on a physical Android device. Official APK downloads are provided through GitHub Releases only.
 
@@ -43,7 +43,7 @@ The interface uses a dark graphite background with restrained gold accents, gene
 - **Bookmarks:** Save stories locally using SQLite.
 - **Offline-friendly cache:** Previously fetched headlines may remain available when refresh fails.
 - **Honest error states:** Feed failures are shown instead of inventing headlines.
-- **Gold editorial UI:** Dark surfaces, warm gold highlights, rounded story cards, and clear action buttons.
+- **Glass-inspired editorial UI:** Matte graphite surfaces, cool-blue highlights, softly outlined panels, horizontal story information, and compact action rails.
 - **Android packaging:** Buildozer and python-for-android build the APK.
 - **Automated checks:** GitHub Actions compiles Python modules and runs unit tests.
 

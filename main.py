@@ -1,4 +1,4 @@
-"""PauzeNews Android-first RSS reader built with Python and Kivy."""
+"""PauzeNews: a compact, Android-first news reader with a glass-inspired UI."""
 from __future__ import annotations
 
 import threading
@@ -8,8 +8,9 @@ from pathlib import Path
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.metrics import dp
+from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.logger import Logger
+from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -18,63 +19,187 @@ from kivy.uix.textinput import TextInput
 
 from news_core import ALL_CATEGORIES, ArticleStore, fetch_category
 
-# Premium gold editorial palette inspired by Apple's typography and spacing.
-BG = (0.035, 0.035, 0.039, 1)
-PANEL = (0.085, 0.083, 0.078, 1)
-PANEL_RAISED = (0.12, 0.115, 0.105, 1)
-ACCENT = (0.88, 0.68, 0.30, 1)
-ACCENT_DARK = (0.32, 0.23, 0.09, 1)
-TEXT = (0.96, 0.95, 0.92, 1)
-MUTED = (0.66, 0.65, 0.61, 1)
+# Matte graphite with cool, restrained highlights.
+BG = (0.025, 0.029, 0.036, 1)
+PANEL = (0.075, 0.085, 0.103, 0.96)
+PANEL_RAISED = (0.095, 0.106, 0.127, 0.96)
+ACCENT = (0.36, 0.64, 1.0, 1)
+ACCENT_DARK = (0.10, 0.19, 0.31, 1)
+TEXT = (0.95, 0.96, 0.98, 1)
+MUTED = (0.62, 0.66, 0.72, 1)
+EDGE = (0.40, 0.47, 0.58, 0.34)
 
 
-class NewsCard(BoxLayout):
+def _shorten(value: str, limit: int) -> str:
+    value = " ".join((value or "").split())
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
+
+
+class GlassSurface(BoxLayout):
+    """Rounded matte panel with subtle glass-edge highlights."""
+
+    def __init__(self, surface_color=PANEL, radius=dp(18), **kwargs):
+        self.surface_color = surface_color
+        self.corner_radius = radius
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(*self.surface_color)
+            self._surface = RoundedRectangle(
+                pos=self.pos, size=self.size, radius=[self.corner_radius]
+            )
+            Color(*EDGE)
+            self._lower_edge = Line(
+                points=[self.x, self.y, self.x + self.width, self.y], width=0.8
+            )
+            Color(0.78, 0.84, 0.94, 0.20)
+            self._shine = Line(
+                points=[
+                    self.x + dp(20), self.y + self.height - dp(1),
+                    self.x + self.width - dp(20), self.y + self.height - dp(1),
+                ],
+                width=1.0,
+            )
+        self.bind(pos=self._sync_surface, size=self._sync_surface)
+
+    def _sync_surface(self, *_):
+        self._surface.pos = self.pos
+        self._surface.size = self.size
+        self._surface.radius = [self.corner_radius]
+        self._lower_edge.points = [
+            self.x + dp(18), self.y + dp(1),
+            self.x + self.width - dp(18), self.y + dp(1),
+        ]
+        self._shine.points = [
+            self.x + dp(20), self.y + self.height - dp(1),
+            self.x + self.width - dp(20), self.y + self.height - dp(1),
+        ]
+
+
+def _text_label(text, *, color=TEXT, font_size="12sp", bold=False, height=None,
+                text_size=None, halign="left", valign="middle"):
+    label = Label(
+        text=text,
+        color=color,
+        font_size=font_size,
+        bold=bold,
+        halign=halign,
+        valign=valign,
+        size_hint_y=None,
+    )
+    if height is not None:
+        label.height = height
+    if text_size is not None:
+        label.text_size = text_size
+    return label
+
+
+def _action_button(text, *, background, color=TEXT, font_size="11sp", bold=True, height=None):
+    button = Button(
+        text=text,
+        color=color,
+        font_size=font_size,
+        bold=bold,
+        background_normal="",
+        background_down="",
+        background_color=background,
+        size_hint_y=None,
+    )
+    if height is not None:
+        button.height = height
+    return button
+
+
+class NewsCard(GlassSurface):
+    """Compact landscape story card; story information and actions sit side by side."""
+
     def __init__(self, article, app, **kwargs):
-        super().__init__(orientation="vertical", spacing=dp(8), padding=dp(14), size_hint_y=None, **kwargs)
+        summary = article.get("summary", "")
+        super().__init__(
+            orientation="horizontal",
+            spacing=dp(12),
+            padding=[dp(14), dp(12), dp(12), dp(12)],
+            surface_color=PANEL,
+            radius=dp(18),
+            size_hint_y=None,
+            height=dp(184 if summary else 148),
+            **kwargs,
+        )
         self.article = article
         self.app = app
-        self.height = dp(202 if article.get("summary") else 160)
-        self.canvas.before.clear()
-        from kivy.graphics import Color, RoundedRectangle
-        with self.canvas.before:
-            Color(*PANEL)
-            self._bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(18)])
-        self.bind(pos=self._sync_bg, size=self._sync_bg)
 
-        published = article.get("published", "")
-        meta_parts = [article.get("category", "News"), article.get("source", "Source")]
-        if published:
-            meta_parts.append(published)
-        meta = "  ·  ".join(meta_parts)
-        self.add_widget(Label(text=meta, color=ACCENT, font_size="10sp", bold=True,
-                              halign="left", valign="middle", size_hint_y=None, height=dp(20),
-                              text_size=(Window.width - dp(60), None)))
-        title = Button(text=article.get("title", "Untitled"), color=TEXT, font_size="17sp",
-                       bold=True, halign="left", valign="middle", text_size=(Window.width - dp(64), None),
-                       background_normal="", background_color=(0, 0, 0, 0),
-                       size_hint_y=None, height=dp(58))
-        title.bind(on_release=lambda *_: self.app.open_article(article))
-        self.add_widget(title)
-        summary = article.get("summary", "")
+        # Leave a dedicated action rail on the right, so long titles do not
+        # collide with the buttons on narrow Android screens.
+        content_width = max(dp(145), Window.width - dp(176))
+        content = BoxLayout(
+            orientation="vertical",
+            spacing=dp(5),
+            size_hint_x=1,
+        )
+
+        published = _shorten(article.get("published", ""), 22)
+        category = article.get("category", "News")
+        source = _shorten(article.get("source", "Source"), 25)
+        meta = "  ·  ".join(part for part in (category, source, published) if part)
+        content.add_widget(_text_label(
+            meta,
+            color=ACCENT,
+            font_size="10sp",
+            bold=True,
+            height=dp(18),
+            text_size=(content_width, dp(18)),
+        ))
+
+        title = _text_label(
+            _shorten(article.get("title", "Untitled"), 140),
+            color=TEXT,
+            font_size="16sp",
+            bold=True,
+            height=dp(62),
+            text_size=(content_width, dp(62)),
+            valign="top",
+        )
+        content.add_widget(title)
+
         if summary:
-            self.add_widget(Label(text=summary, color=MUTED, font_size="12sp", halign="left",
-                                  valign="top", size_hint_y=None, height=dp(42),
-                                  text_size=(Window.width - dp(64), dp(42))))
-        footer = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(8))
-        read = Button(text="Read story  →", font_size="12sp", bold=True, color=BG,
-                      background_normal="", background_color=ACCENT)
+            content.add_widget(_text_label(
+                _shorten(summary, 190),
+                color=MUTED,
+                font_size="11sp",
+                height=dp(42),
+                text_size=(content_width, dp(42)),
+                valign="top",
+            ))
+        self.add_widget(content)
+
+        actions = BoxLayout(
+            orientation="vertical",
+            size_hint_x=None,
+            width=dp(78),
+            spacing=dp(8),
+            padding=[0, dp(14), 0, dp(10)],
+        )
+        read = _action_button(
+            "Open ↗",
+            background=ACCENT,
+            color=BG,
+            font_size="11sp",
+            height=dp(38),
+        )
         read.bind(on_release=lambda *_: self.app.open_article(article))
         saved = self.app.store.is_bookmarked(article["id"])
-        bookmark = Button(text="★ Saved" if saved else "☆ Save", font_size="12sp",
-                          color=ACCENT, background_normal="", background_color=ACCENT_DARK)
+        bookmark = _action_button(
+            "★ Saved" if saved else "☆ Save",
+            background=ACCENT_DARK if saved else PANEL_RAISED,
+            color=ACCENT if saved else MUTED,
+            font_size="10sp",
+            height=dp(38),
+        )
         bookmark.bind(on_release=lambda *_: self.app.toggle_bookmark(article))
-        footer.add_widget(read)
-        footer.add_widget(bookmark)
-        self.add_widget(footer)
-
-    def _sync_bg(self, *_):
-        self._bg.pos = self.pos
-        self._bg.size = self.size
+        actions.add_widget(read)
+        actions.add_widget(bookmark)
+        self.add_widget(actions)
 
 
 class PauzeNewsApp(App):
@@ -82,83 +207,167 @@ class PauzeNewsApp(App):
 
     def build(self):
         Window.clearcolor = BG
+        Window.softinput_mode = "below_target"
         self.category = "For You"
         self.show_saved = False
         self.loading = False
         self.articles = []
-        # Render a small first page to avoid creating hundreds of Kivy widgets
-        # at once on low-memory Android devices.
-        self.visible_limit = 24
+        # Small first paint limits widget churn and memory use on phones.
+        self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
 
-        # API 34 is used with the current SDL2 bootstrap so system-bar insets
-        # are handled by Android instead of allowing the UI under the status bar.
-        root = BoxLayout(orientation="vertical", padding=[dp(16), dp(18), dp(16), dp(12)], spacing=dp(12))
-        header = BoxLayout(size_hint_y=None, height=dp(70), spacing=dp(8))
-        brand = BoxLayout(orientation="vertical")
-        brand.add_widget(Label(text="[b]PauzeNews[/b]", markup=True, color=TEXT, font_size="25sp",
-                               halign="left", valign="middle"))
-        brand.add_widget(Label(text="THE WORLD, IN CONTEXT.", color=ACCENT, font_size="10sp",
-                               bold=True, halign="left", valign="middle"))
+        # Extra top and bottom clearance keeps content away from Android's
+        # status/navigation areas on devices where SDL2 reports edge overlap.
+        root = BoxLayout(
+            orientation="vertical",
+            padding=[dp(18), dp(34), dp(18), dp(20)],
+            spacing=dp(12),
+        )
+
+        header = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(66),
+            spacing=dp(10),
+        )
+        brand = BoxLayout(orientation="vertical", spacing=0)
+        brand.add_widget(_text_label(
+            "PauzeNews",
+            color=TEXT,
+            font_size="27sp",
+            bold=True,
+            height=dp(38),
+            text_size=(max(dp(170), Window.width - dp(150)), dp(38)),
+        ))
+        brand.add_widget(_text_label(
+            "THE WORLD, IN CONTEXT.",
+            color=MUTED,
+            font_size="9sp",
+            bold=True,
+            height=dp(19),
+            text_size=(max(dp(170), Window.width - dp(150)), dp(19)),
+        ))
         header.add_widget(brand)
-        refresh = Button(text="Refresh", size_hint_x=None, width=dp(82), font_size="12sp",
-                         bold=True, color=BG, background_normal="", background_color=ACCENT)
+
+        refresh = _action_button(
+            "Refresh",
+            background=ACCENT,
+            color=BG,
+            font_size="12sp",
+            height=dp(44),
+        )
+        refresh.size_hint_x = None
+        refresh.width = dp(88)
         refresh.bind(on_release=lambda *_: self.refresh_news())
         header.add_widget(refresh)
         root.add_widget(header)
 
-        self.search = TextInput(hint_text="Search headlines or publishers", multiline=False,
-                                size_hint_y=None, height=dp(48), padding=[dp(14), dp(12)],
-                                background_normal="", background_active="",
-                                background_color=PANEL_RAISED, foreground_color=TEXT,
-                                hint_text_color=MUTED, cursor_color=ACCENT,
-                                selection_color=ACCENT_DARK, font_size="14sp")
+        search_shell = GlassSurface(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(52),
+            padding=[dp(13), dp(3), dp(13), dp(3)],
+            surface_color=PANEL_RAISED,
+            radius=dp(16),
+        )
+        self.search = TextInput(
+            hint_text="Search headlines or publishers",
+            multiline=False,
+            background_normal="",
+            background_active="",
+            background_color=(0, 0, 0, 0),
+            foreground_color=TEXT,
+            hint_text_color=MUTED,
+            cursor_color=ACCENT,
+            selection_color=ACCENT_DARK,
+            font_size="14sp",
+            padding=[dp(2), dp(10), dp(2), dp(8)],
+        )
         self.search.bind(text=lambda *_: self._search_changed())
-        root.add_widget(self.search)
+        search_shell.add_widget(self.search)
+        root.add_widget(search_shell)
 
-        category_scroll = ScrollView(size_hint_y=None, height=dp(42), do_scroll_y=False, do_scroll_x=True, bar_width=0)
-        category_row = BoxLayout(size_hint_x=None, size_hint_y=None, height=dp(38), spacing=dp(7))
+        category_scroll = ScrollView(
+            size_hint_y=None,
+            height=dp(44),
+            do_scroll_y=False,
+            do_scroll_x=True,
+            bar_width=0,
+            scroll_type=["content"],
+        )
+        category_row = BoxLayout(
+            size_hint_x=None,
+            size_hint_y=None,
+            height=dp(40),
+            spacing=dp(7),
+        )
         category_row.bind(minimum_width=category_row.setter("width"))
         self.category_buttons = {}
         for category in ALL_CATEGORIES + ["Saved"]:
-            button = Button(text=category, size_hint_x=None, width=dp(max(82, len(category) * 8 + 28)),
-                            background_normal="", background_color=ACCENT if category == self.category else PANEL,
-                            color=BG if category == self.category else MUTED,
-                            bold=category == self.category, font_size="12sp")
+            selected = category == self.category
+            button = Button(
+                text=category,
+                size_hint_x=None,
+                width=dp(max(80, len(category) * 7.1 + 28)),
+                background_normal="",
+                background_down="",
+                background_color=ACCENT_DARK if selected else PANEL,
+                color=ACCENT if selected else MUTED,
+                bold=selected,
+                font_size="11sp",
+            )
             button.bind(on_release=lambda instance, c=category: self.select_category(c))
             self.category_buttons[category] = button
             category_row.add_widget(button)
         category_scroll.add_widget(category_row)
         root.add_widget(category_scroll)
 
-        self.status = Label(text="Loading real headlines…", color=MUTED, size_hint_y=None,
-                            height=dp(30), font_size="12sp", halign="left", valign="middle")
+        self.status = _text_label(
+            "Preparing your briefing…",
+            color=MUTED,
+            font_size="11sp",
+            height=dp(30),
+            text_size=(max(dp(220), Window.width - dp(40)), dp(30)),
+        )
         root.add_widget(self.status)
-        self.scroll = ScrollView(do_scroll_x=False)
-        self.card_list = BoxLayout(orientation="vertical", spacing=dp(10), padding=[0, dp(2), 0, dp(10)],
-                                   size_hint_y=None)
+
+        self.scroll = ScrollView(
+            do_scroll_x=False,
+            do_scroll_y=True,
+            bar_width=dp(3),
+            scroll_type=["bars", "content"],
+        )
+        self.card_list = BoxLayout(
+            orientation="vertical",
+            spacing=dp(11),
+            padding=[0, dp(2), 0, dp(12)],
+            size_hint_y=None,
+        )
         self.card_list.bind(minimum_height=self.card_list.setter("height"))
         self.scroll.add_widget(self.card_list)
         root.add_widget(self.scroll)
-        self.refresh_news()
+
+        # Let the first frame and safe-area spacing settle before networking.
+        Clock.schedule_once(lambda _dt: self.refresh_news(), 0.25)
         return root
 
     def _search_changed(self):
-        self.visible_limit = 24
+        self.visible_limit = 8
         self.render_articles()
 
     def _load_more(self, *_):
-        self.visible_limit = min(self.visible_limit + 24, 500)
+        self.visible_limit = min(self.visible_limit + 8, 160)
         self.render_articles()
 
     def select_category(self, category):
         self.category = category
-        self.visible_limit = 24
+        self.visible_limit = 8
         self.show_saved = category == "Saved"
         for name, button in self.category_buttons.items():
-            button.background_color = ACCENT if name == category else PANEL
-            button.color = BG if name == category else MUTED
-            button.bold = name == category
+            selected = name == category
+            button.background_color = ACCENT_DARK if selected else PANEL
+            button.color = ACCENT if selected else MUTED
+            button.bold = selected
         self.render_articles()
         if not self.show_saved:
             self.refresh_news()
@@ -167,7 +376,7 @@ class PauzeNewsApp(App):
         if self.loading:
             return
         self.loading = True
-        self.status.text = "Loading real headlines from Google News…"
+        self.status.text = "Loading headlines…"
         self.render_articles()
         category = self.category if self.category != "Saved" else "For You"
 
@@ -192,18 +401,27 @@ class PauzeNewsApp(App):
                     elif articles:
                         self.status.text = f"{len(articles)} headlines updated"
                     elif errors:
-                        self.status.text = "Could not reach the news feeds. Check internet and tap Refresh."
+                        self.status.text = (
+                            "Could not reach the news feeds. Check your connection and retry."
+                        )
                     else:
-                        self.status.text = "No stories returned. Check internet and tap Refresh."
+                        self.status.text = "No stories returned. Pull down by tapping Refresh."
                 except Exception:
                     Logger.exception("PauzeNews: failed to save or display news")
                     self.loading = False
                     self.status.text = "Couldn't display headlines. Tap Refresh to retry."
 
-            Clock.schedule_once(finish, 0)
+            try:
+                Clock.schedule_once(finish, 0)
+            except Exception:
+                Logger.exception("PauzeNews: could not schedule news results")
 
         try:
-            threading.Thread(target=worker, daemon=True).start()
+            threading.Thread(
+                target=worker,
+                name="pauzenews-news-refresh",
+                daemon=True,
+            ).start()
         except Exception:
             Logger.exception("PauzeNews: could not start news worker")
             self.loading = False
@@ -219,7 +437,7 @@ class PauzeNewsApp(App):
                 category=self.category if self.category != "Saved" else "For You",
                 query=self.search.text if hasattr(self, "search") else "",
                 bookmarks_only=self.show_saved,
-                limit=min(self.visible_limit + 1, 500),
+                limit=min(self.visible_limit + 1, 160),
             )
         except Exception:
             Logger.exception("PauzeNews: failed to read cached headlines")
@@ -230,37 +448,41 @@ class PauzeNewsApp(App):
         articles = found[:self.visible_limit]
         if not articles:
             if self.loading:
-                message = "Fetching live headlines. Stories will appear here shortly."
+                message = "Fetching live headlines. They will appear here shortly."
             elif self.show_saved:
-                message = "No saved stories yet."
+                message = "No saved stories yet. Save one from any topic."
+            elif self.search.text.strip():
+                message = "No matching stories. Try a shorter search."
             else:
-                message = "No cached headlines yet. Tap Try again to load real news."
-            self.card_list.add_widget(Label(
-                text=message, color=MUTED, size_hint_y=None, height=dp(84),
-                halign="center", valign="middle",
+                message = "No cached headlines yet. Tap Refresh to retry."
+            self.card_list.add_widget(_text_label(
+                message,
+                color=MUTED,
+                font_size="12sp",
+                height=dp(84),
                 text_size=(max(dp(220), Window.width - dp(48)), dp(84)),
+                halign="center",
             ))
             if not self.loading and not self.show_saved:
-                retry = Button(
-                    text="Try again", size_hint_y=None, height=dp(44),
-                    background_normal="", background_color=ACCENT, color=BG, bold=True,
+                retry = _action_button(
+                    "Try again",
+                    background=ACCENT_DARK,
+                    color=ACCENT,
+                    height=dp(44),
                 )
                 retry.bind(on_release=lambda *_: self.refresh_news())
                 self.card_list.add_widget(retry)
             return
+
         for article in articles:
-            card = NewsCard(article, self, size_hint_y=None)
-            self.card_list.add_widget(card)
+            self.card_list.add_widget(NewsCard(article, self))
 
         if has_more:
-            more = Button(
-                text="Load more headlines",
-                size_hint_y=None,
+            more = _action_button(
+                "Load more headlines",
+                background=ACCENT_DARK,
+                color=ACCENT,
                 height=dp(46),
-                background_normal="",
-                background_color=ACCENT_DARK,
-                color=TEXT,
-                bold=True,
             )
             more.bind(on_release=self._load_more)
             self.card_list.add_widget(more)
@@ -273,7 +495,13 @@ class PauzeNewsApp(App):
     def open_article(self, article):
         url = article.get("url", "")
         if url.startswith(("https://", "http://")):
-            webbrowser.open(url)
+            try:
+                opened = webbrowser.open(url)
+                if opened is False:
+                    self.status.text = "Could not open the link on this device."
+            except Exception:
+                Logger.exception("PauzeNews: could not open article")
+                self.status.text = "Could not open this article. Try your browser."
 
     def on_pause(self):
         return True

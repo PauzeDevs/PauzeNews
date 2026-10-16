@@ -183,7 +183,7 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
     # publisher cannot delay all the other stories for dozens of seconds.
     if session is None and len(sources) > 1:
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        with ThreadPoolExecutor(max_workers=min(8, len(sources))) as pool:
+        with ThreadPoolExecutor(max_workers=min(4, len(sources))) as pool:
             futures = {pool.submit(fetch_one, source): source for source in sources}
             results = []
             for future in as_completed(futures):
