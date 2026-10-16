@@ -11,7 +11,8 @@ requirements = python3,kivy
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
-android.api = 35
+android.api = 34
+# Keep target below Android 15's forced edge-to-edge mode until Kivy insets are handled.
 # Keep API 24 for compatibility with the Android native runtime.
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
