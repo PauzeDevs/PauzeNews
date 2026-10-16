@@ -1,13 +1,11 @@
-"""News ingestion and SQLite persistence for PauzeNews.
-
-Only feed metadata and excerpts are stored. The original article remains with
-its publisher and is opened through its source URL.
-"""
+"""News ingestion and SQLite persistence for PauzeNews."""
 from __future__ import annotations
 
 import hashlib
+import html
 import sqlite3
 import time
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
@@ -15,37 +13,41 @@ from urllib.parse import urlparse
 import feedparser
 import requests
 
-APP_NAME = "PauzeNews"
 REQUEST_TIMEOUT = 12
 MAX_ITEMS_PER_FEED = 35
 
 FEEDS = {
-    "World": [
-        ("BBC News", "https://feeds.bbci.co.uk/news/world/rss.xml"),
-    ],
-    "India": [
-        ("BBC News", "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml"),
-    ],
-    "Technology": [
-        ("BBC News", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
-    ],
+    "World": [("BBC News", "https://feeds.bbci.co.uk/news/world/rss.xml")],
+    "India": [("BBC News", "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml")],
+    "Technology": [("BBC News", "https://feeds.bbci.co.uk/news/technology/rss.xml")],
     "Science": [
         ("BBC News", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
         ("NASA", "https://www.nasa.gov/news-release/feed/"),
     ],
-    "Business": [
-        ("BBC News", "https://feeds.bbci.co.uk/news/business/rss.xml"),
-    ],
-    "Aviation": [
-        ("Simple Flying", "https://simpleflying.com/feed/"),
-    ],
+    "Business": [("BBC News", "https://feeds.bbci.co.uk/news/business/rss.xml")],
+    "Aviation": [("Simple Flying", "https://simpleflying.com/feed/")],
 }
-
 ALL_CATEGORIES = ["For You"] + list(FEEDS)
 
 
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
 def _clean(value: object) -> str:
-    return " ".join(str(value or "").replace("\x00", "").split()).strip()
+    raw = html.unescape(str(value or "")).replace("\x00", "")
+    parser = _TextExtractor()
+    try:
+        parser.feed(raw)
+        raw = " ".join(parser.parts)
+    except Exception:
+        pass
+    return " ".join(raw.split()).strip()
 
 
 def _safe_url(value: str) -> bool:
@@ -71,11 +73,9 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
         seen.add(key)
 
         summary = _clean(entry.get("summary") or entry.get("description"))
-        # Keep feed-provided excerpts short; do not present them as full articles.
         if len(summary) > 420:
             summary = summary[:417].rstrip() + "..."
 
-        published = _clean(entry.get("published") or entry.get("updated"))
         articles.append({
             "id": key,
             "title": title,
@@ -83,15 +83,14 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
             "summary": summary,
             "source": _clean(source_name) or _clean(urlparse(url).netloc),
             "category": category,
-            "published": published,
+            "published": _clean(entry.get("published") or entry.get("updated")),
             "fetched_at": int(time.time()),
         })
-
     return articles
 
 
 def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
-    """Fetch one category without letting a failed source break the whole feed."""
+    """Fetch a category while isolating individual source failures."""
     if category == "For You":
         categories = list(FEEDS)
     elif category in FEEDS:
@@ -113,13 +112,11 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                     headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
                 )
                 response.raise_for_status()
-                entries = parse_feed(response.content, selected_category, source_name)
-                for article in entries:
+                for article in parse_feed(response.content, selected_category, source_name):
                     if article["url"] not in seen_urls:
                         seen_urls.add(article["url"])
                         collected.append(article)
             except Exception as exc:
-                # Keep diagnostics useful without exposing response bodies/secrets.
                 errors.append(f"{source_name}: {type(exc).__name__}")
 
     collected.sort(key=lambda item: item["fetched_at"], reverse=True)
@@ -127,16 +124,17 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
 
 
 class ArticleStore:
-    """Small local SQLite store for cached headlines and bookmarks."""
+    """Local SQLite store for cached headlines and bookmarks."""
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
         self._initialize()
 
     def _connect(self):
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+        db = sqlite3.connect(self.db_path)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys = ON")
+        return db
 
     def _initialize(self):
         with self._connect() as db:
@@ -154,12 +152,10 @@ class ArticleStore:
             """)
             db.execute("""
                 CREATE TABLE IF NOT EXISTS bookmarks (
-                    article_id TEXT PRIMARY KEY,
-                    saved_at INTEGER NOT NULL,
-                    FOREIGN KEY(article_id) REFERENCES articles(id) ON DELETE CASCADE
+                    article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+                    saved_at INTEGER NOT NULL
                 )
             """)
-            db.execute("PRAGMA foreign_keys = ON")
 
     def save_articles(self, articles: Iterable[dict]) -> None:
         with self._connect() as db:
