@@ -5,12 +5,12 @@ import hashlib
 import html
 import sqlite3
 import time
+import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
 
-import feedparser
 import requests
 
 REQUEST_TIMEOUT = 12
@@ -57,13 +57,54 @@ def _safe_url(value: str) -> bool:
 
 def parse_feed(content: bytes | str, category: str, source_name: str) -> list[dict]:
     """Parse RSS/Atom XML into normalized, deduplicated article dictionaries."""
-    parsed = feedparser.parse(content)
+    # Use the standard-library XML parser rather than feedparser. This keeps
+    # Android builds self-contained and avoids python-for-android's legacy
+    # feedparser recipe (which still uses the removed setuptools use_2to3 flag).
+    try:
+        root = ET.fromstring(content)
+    except (ET.ParseError, TypeError, ValueError):
+        return []
+
+    def local_name(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1].lower()
+
+    def child_text(element: ET.Element, names: set[str]) -> str:
+        for child in element.iter():
+            if child is element:
+                continue
+            if local_name(child.tag) in names:
+                # Atom links use href; RSS links normally use text.
+                value = child.attrib.get("href", "") or "".join(child.itertext())
+                if value.strip():
+                    return value.strip()
+        return ""
+
+    is_atom = local_name(root.tag) == "feed"
+    if is_atom:
+        entries = [node for node in root if local_name(node.tag) == "entry"]
+    else:
+        channel = next(
+            (node for node in root.iter() if local_name(node.tag) == "channel"),
+            root,
+        )
+        entries = [node for node in channel if local_name(node.tag) == "item"]
+
     articles: list[dict] = []
     seen: set[str] = set()
+    for entry in entries[:MAX_ITEMS_PER_FEED]:
+        title = _clean(child_text(entry, {"title"}))
+        if is_atom:
+            url = ""
+            for node in entry:
+                if local_name(node.tag) == "link":
+                    rel = node.attrib.get("rel", "alternate")
+                    href = node.attrib.get("href", "")
+                    if href and rel in {"alternate", ""}:
+                        url = href
+                        break
+        else:
+            url = child_text(entry, {"link"})
 
-    for entry in parsed.entries[:MAX_ITEMS_PER_FEED]:
-        title = _clean(entry.get("title"))
-        url = _clean(entry.get("link"))
         if not title or not _safe_url(url):
             continue
 
@@ -72,10 +113,11 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
             continue
         seen.add(key)
 
-        summary = _clean(entry.get("summary") or entry.get("description"))
+        summary = _clean(child_text(entry, {"summary", "description", "encoded", "content"}))
         if len(summary) > 420:
             summary = summary[:417].rstrip() + "..."
 
+        published = _clean(child_text(entry, {"pubdate", "published", "updated", "date"}))
         articles.append({
             "id": key,
             "title": title,
@@ -83,11 +125,10 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
             "summary": summary,
             "source": _clean(source_name) or _clean(urlparse(url).netloc),
             "category": category,
-            "published": _clean(entry.get("published") or entry.get("updated")),
+            "published": published,
             "fetched_at": int(time.time()),
         })
     return articles
-
 
 def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
     """Fetch a category while isolating individual source failures."""
