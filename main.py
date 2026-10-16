@@ -41,8 +41,9 @@ class NewsCard(BoxLayout):
         self.add_widget(Label(text=meta, color=ACCENT, font_size="11sp", bold=True,
                               halign="left", valign="middle", size_hint_y=None, height=dp(18), text_size=(Window.width - dp(60), None)))
         title = Button(text=article.get("title", "Untitled"), color=TEXT, font_size="16sp",
-                       bold=True, halign="left", valign="middle", background_normal="",
-                       background_color=(0, 0, 0, 0), size_hint_y=None, height=dp(48))
+                       bold=True, halign="left", valign="middle", text_size=(Window.width - dp(64), None),
+                       background_normal="", background_color=(0, 0, 0, 0),
+                       size_hint_y=None, height=dp(52))
         title.bind(on_release=lambda *_: self.app.open_article(article))
         self.add_widget(title)
         summary = article.get("summary", "")
@@ -101,11 +102,13 @@ class PauzeNewsApp(App):
         category_scroll = ScrollView(size_hint_y=None, height=dp(42), do_scroll_y=False, do_scroll_x=True)
         category_row = BoxLayout(size_hint_x=None, size_hint_y=None, height=dp(38), spacing=dp(7))
         category_row.bind(minimum_width=category_row.setter("width"))
+        self.category_buttons = {}
         for category in ALL_CATEGORIES + ["Saved"]:
             button = Button(text=category, size_hint_x=None, width=dp(max(78, len(category) * 8 + 24)),
                             background_normal="", background_color=ACCENT if category == self.category else PANEL,
                             color=TEXT, font_size="12sp")
             button.bind(on_release=lambda instance, c=category: self.select_category(c))
+            self.category_buttons[category] = button
             category_row.add_widget(button)
         category_scroll.add_widget(category_row)
         root.add_widget(category_scroll)
@@ -125,9 +128,11 @@ class PauzeNewsApp(App):
     def select_category(self, category):
         self.category = category
         self.show_saved = category == "Saved"
+        for name, button in self.category_buttons.items():
+            button.background_color = ACCENT if name == category else PANEL
         self.render_articles()
-        # Refresh category button colors without rebuilding the full view.
-        self.refresh_news() if not self.show_saved else None
+        if not self.show_saved:
+            self.refresh_news()
 
     def refresh_news(self):
         if self.loading:
