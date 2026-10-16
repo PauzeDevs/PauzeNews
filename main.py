@@ -147,17 +147,24 @@ class PauzeNewsApp(App):
 
         def worker():
             articles, errors = fetch_category(category)
+
             def finish(_dt):
                 if articles:
                     self.store.save_articles(articles)
                 self.loading = False
                 self.render_articles()
-                if articles:
+                if articles and errors:
+                    self.status.text = (
+                        f"{len(articles)} headlines updated · "
+                        f"{len(errors)} source(s) unavailable"
+                    )
+                elif articles:
                     self.status.text = f"{len(articles)} headlines updated"
                 elif errors:
-                    self.status.text = "Couldn't refresh. Showing cached headlines if available."
+                    self.status.text = "Refresh failed. Showing cached headlines if available."
                 else:
-                    self.status.text = "No stories available yet. Pull refresh to try again."
+                    self.status.text = "No stories available yet. Tap ↻ to try again."
+
             Clock.schedule_once(finish, 0)
 
         threading.Thread(target=worker, daemon=True).start()
