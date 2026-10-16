@@ -15,6 +15,17 @@ RSS = b"""<?xml version="1.0"?>
 <item><title>Unsafe link</title><link>javascript:alert(1)</link></item>
 </channel></rss>"""
 
+ATOM = b"""<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Atom</title>
+  <entry>
+    <title>Atom headline</title>
+    <link href="https://example.com/atom" rel="alternate" />
+    <summary>Atom summary</summary>
+    <updated>2026-10-16T10:00:00Z</updated>
+  </entry>
+</feed>"""
+
 
 class FeedParsingTests(unittest.TestCase):
     def test_parser_normalizes_and_filters_entries(self):
@@ -24,6 +35,17 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]["source"], "Test Publisher")
         self.assertEqual(items[0]["url"], "https://example.com/one")
         self.assertEqual(items[0]["summary"], "A short summary & update.")
+
+    def test_parser_supports_atom_feeds(self):
+        items = parse_feed(ATOM, "Technology", "Atom Publisher")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["title"], "Atom headline")
+        self.assertEqual(items[0]["url"], "https://example.com/atom")
+        self.assertEqual(items[0]["summary"], "Atom summary")
+        self.assertEqual(items[0]["published"], "2026-10-16T10:00:00Z")
+
+    def test_parser_returns_empty_for_malformed_xml(self):
+        self.assertEqual(parse_feed(b"<rss><channel><item>", "World", "Broken"), [])
 
     def test_store_and_bookmark(self):
         with tempfile.TemporaryDirectory() as directory:
