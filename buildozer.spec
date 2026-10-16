@@ -11,7 +11,10 @@ requirements = python3,kivy,certifi
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
-android.api = 35
+# Keep target API 34 while using the pinned SDL2 bootstrap. API 35 enables
+# enforced edge-to-edge rendering on Android 15+, which requires explicit
+# system-bar inset support not provided by this pinned python-for-android build.
+android.api = 34
 # Keep API 24 for compatibility with the Android native runtime.
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
