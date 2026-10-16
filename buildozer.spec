@@ -12,12 +12,15 @@ orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
 android.api = 35
-# Python 3.14 uses pwritev/preadv in remote debugging; Android NDK exposes these from API 24.
+# Keep API 24 for compatibility with the Android native runtime.
 android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 android.enable_androidx = True
 p4a.bootstrap = sdl2
+# The latest p4a master selects Python 3.14 and currently fails packaging charset-normalizer.
+# Pin to a known release using the Python 3.11 recipe until upstream Android wheels are compatible.
+p4a.branch = v2024.01.21
 
 [buildozer]
 
