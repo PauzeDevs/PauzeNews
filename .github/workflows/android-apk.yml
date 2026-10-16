@@ -104,3 +104,38 @@ jobs:
           overwrite_files: true
           fail_on_unmatched_files: true
           files: bin/*.apk
+
+      - name: Publish stable v1.0.0
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[stable-release]')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: PauzeNews v1.0.0 — Stable Release
+          target_commitish: ${{ github.sha }}
+          prerelease: false
+          make_latest: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: bin/*.apk
+          body: |
+            # PauzeNews v1.0.0 — Stable Release
+
+            The first stable release of PauzeNews, built from the latest main branch.
+
+            ## Highlights
+            - Refreshed dark graphite interface with cool-blue accents and outlined panels.
+            - Horizontal story cards with clear Open and Save actions.
+            - Improved startup rendering and safer loading/error handling.
+            - Staged initial story rendering with a Load More option.
+            - Reduced concurrent feed requests for a more controlled startup experience.
+
+            ## Installation
+            1. Download the APK attached to this release.
+            2. Open the downloaded APK on your Android device and follow the installation prompts.
+            3. If Android blocks installation, allow your browser or file manager to install unknown apps, then retry.
+
+            ## Links
+            - PauzeX Developments: https://pauzex.devs.surf/
+            - Source code: https://github.com/PauzeDevs/PauzeNews
+
+            **Build note:** CI verifies that an APK is produced; device-specific behavior may vary by Android version.
