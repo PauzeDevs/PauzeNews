@@ -82,7 +82,8 @@ class PauzeNewsApp(App):
         self.articles = []
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
 
-        root = BoxLayout(orientation="vertical", padding=[dp(14), dp(12), dp(14), dp(8)], spacing=dp(10))
+        # Extra top padding keeps the header clear of Android's status-bar inset.
+        root = BoxLayout(orientation="vertical", padding=[dp(14), dp(18), dp(14), dp(10)], spacing=dp(10))
         header = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         brand = BoxLayout(orientation="vertical")
         brand.add_widget(Label(text="[b]PauzeNews[/b]", markup=True, color=TEXT, font_size="23sp",
@@ -90,7 +91,7 @@ class PauzeNewsApp(App):
         brand.add_widget(Label(text="Your world. In context.", color=MUTED, font_size="11sp",
                                halign="left", valign="middle"))
         header.add_widget(brand)
-        refresh = Button(text="↻", size_hint_x=None, width=dp(48), font_size="24sp",
+        refresh = Button(text="Refresh", size_hint_x=None, width=dp(78), font_size="12sp",
                          background_normal="", background_color=ACCENT)
         refresh.bind(on_release=lambda *_: self.refresh_news())
         header.add_widget(refresh)
@@ -103,7 +104,7 @@ class PauzeNewsApp(App):
         self.search.bind(text=lambda *_: self.render_articles())
         root.add_widget(self.search)
 
-        category_scroll = ScrollView(size_hint_y=None, height=dp(42), do_scroll_y=False, do_scroll_x=True)
+        category_scroll = ScrollView(size_hint_y=None, height=dp(42), do_scroll_y=False, do_scroll_x=True, bar_width=0)
         category_row = BoxLayout(size_hint_x=None, size_hint_y=None, height=dp(38), spacing=dp(7))
         category_row.bind(minimum_width=category_row.setter("width"))
         self.category_buttons = {}
@@ -142,7 +143,7 @@ class PauzeNewsApp(App):
         if self.loading:
             return
         self.loading = True
-        self.status.text = "Fetching headlines from configured RSS sources…"
+        self.status.text = "Loading real headlines from Google News…"
         category = self.category if self.category != "Saved" else "For You"
 
         def worker():
@@ -161,9 +162,9 @@ class PauzeNewsApp(App):
                 elif articles:
                     self.status.text = f"{len(articles)} headlines updated"
                 elif errors:
-                    self.status.text = "Refresh failed. Showing cached headlines if available."
+                    self.status.text = "Could not reach the news feeds. Check internet and tap Refresh."
                 else:
-                    self.status.text = "No stories available yet. Tap ↻ to try again."
+                    self.status.text = "No stories returned. Check internet and tap Refresh."
 
             Clock.schedule_once(finish, 0)
 
@@ -179,8 +180,19 @@ class PauzeNewsApp(App):
             bookmarks_only=self.show_saved,
         )
         if not articles:
-            message = "No saved stories yet." if self.show_saved else "No cached headlines yet. Tap ↻ to refresh."
-            self.card_list.add_widget(Label(text=message, color=MUTED, size_hint_y=None, height=dp(70)))
+            message = "No saved stories yet." if self.show_saved else "No cached headlines yet. Tap Try again to load real news."
+            self.card_list.add_widget(Label(
+                text=message, color=MUTED, size_hint_y=None, height=dp(84),
+                halign="center", valign="middle",
+                text_size=(Window.width - dp(56), dp(84)),
+            ))
+            if not self.show_saved:
+                retry = Button(
+                    text="Try again", size_hint_y=None, height=dp(42),
+                    background_normal="", background_color=ACCENT, color=TEXT,
+                )
+                retry.bind(on_release=lambda *_: self.refresh_news())
+                self.card_list.add_widget(retry)
             return
         for article in articles:
             card = NewsCard(article, self, size_hint_y=None)
