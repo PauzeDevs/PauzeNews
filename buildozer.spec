@@ -12,7 +12,8 @@ orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET
 android.api = 35
-android.minapi = 23
+# Python 3.14 uses pwritev/preadv in remote debugging; Android NDK exposes these from API 24.
+android.minapi = 24
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 android.enable_androidx = True
