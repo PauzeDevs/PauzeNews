@@ -62,14 +62,45 @@ jobs:
       - name: Build debug APK
         shell: bash
         run: |
-          set -o pipefail
+          # GitHub's default shell enables pipefail, which incorrectly fails
+          # when 'yes' receives SIGPIPE after Buildozer has consumed its prompts.
+          # Preserve the pipeline's rightmost command status (Buildozer's status).
+          set +o pipefail
           yes | buildozer -v android debug
 
-      - name: Publish APK to GitHub Release
+      - name: Verify APK output
+        shell: bash
+        run: |
+          apk="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          if [ -z "$apk" ]; then
+            echo "::error::Buildozer finished without producing an APK"
+            exit 1
+          fi
+          ls -lh "$apk"
+
+      - name: Publish/update beta prerelease
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pauzenews-beta
+          name: PauzeNews Beta — Latest Main Build
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: bin/*.apk
+          body: |
+            Automated beta build from the latest successful `main` workflow run.
+
+            **Testing build:** features and appearance may change. Download APKs only from the official PauzeNews Releases page.
+
+      - name: Publish versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: PauzeNews ${{ github.ref_name }}
           generate_release_notes: true
-          files: bin/*.apk
+          overwrite_files: true
           fail_on_unmatched_files: true
+          files: bin/*.apk
