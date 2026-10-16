@@ -44,6 +44,17 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]["summary"], "Atom summary")
         self.assertEqual(items[0]["published"], "2026-10-16T10:00:00Z")
 
+    def test_parser_uses_publisher_from_news_rss_source_element(self):
+        content = b"""<rss version="2.0"><channel><item>
+        <title>Headline from publisher</title>
+        <link>https://example.com/publisher-story</link>
+        <source url="https://example.com">Example Publisher</source>
+        <description>Test summary</description>
+        </item></channel></rss>"""
+        items = parse_feed(content, "World", "Google News")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["source"], "Example Publisher")
+
     def test_parser_returns_empty_for_malformed_xml(self):
         self.assertEqual(parse_feed(b"<rss><channel><item>", "World", "Broken"), [])
 
