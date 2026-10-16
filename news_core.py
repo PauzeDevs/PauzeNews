@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
 
-import requests
+from urllib.request import Request, urlopen
 
 REQUEST_TIMEOUT = 12
 MAX_ITEMS_PER_FEED = 35
@@ -139,7 +139,6 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
     else:
         return [], [f"Unknown category: {category}"]
 
-    http = session or requests.Session()
     collected: list[dict] = []
     errors: list[str] = []
     seen_urls: set[str] = set()
@@ -147,13 +146,23 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
     for selected_category in categories:
         for source_name, feed_url in FEEDS[selected_category]:
             try:
-                response = http.get(
-                    feed_url,
-                    timeout=REQUEST_TIMEOUT,
-                    headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
-                )
-                response.raise_for_status()
-                for article in parse_feed(response.content, selected_category, source_name):
+                if session is not None:
+                    # Injectable HTTP session keeps network behavior testable.
+                    response = session.get(
+                        feed_url,
+                        timeout=REQUEST_TIMEOUT,
+                        headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+                    )
+                    response.raise_for_status()
+                    content = response.content
+                else:
+                    request = Request(
+                        feed_url,
+                        headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+                    )
+                    with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                        content = response.read()
+                for article in parse_feed(content, selected_category, source_name):
                     if article["url"] not in seen_urls:
                         seen_urls.add(article["url"])
                         collected.append(article)
