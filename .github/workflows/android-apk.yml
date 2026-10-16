@@ -7,6 +7,12 @@ on:
       - main
     paths:
       - "buildozer.spec"
+      - "requirements.txt"
+      - "**.py"
+      - "**.kv"
+      - "*.png"
+      - "*.jpg"
+      - "*.jpeg"
       - ".github/workflows/android-apk.yml"
     tags:
       - "v*"
