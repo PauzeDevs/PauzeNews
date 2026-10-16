@@ -16,7 +16,7 @@ A lightweight, Android-first news reader with a clean, gold-accented editorial i
 </p>
 
 <p>
-  <a href="https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml"><strong>Build APK</strong></a>
+  <a href="https://github.com/PauzeDevs/PauzeNews/releases"><strong>Download latest release</strong></a>
   · <a href="https://github.com/PauzeDevs/PauzeNews/actions">Workflow runs</a>
   · <a href="https://github.com/PauzeDevs/PauzeNews/issues">Report a bug</a>
   · <a href="https://github.com/PauzeDevs/PauzeNews/blob/main/LICENSE">License</a>
@@ -32,7 +32,7 @@ PauzeNews is a Python-first news reader built with **Kivy**. It brings topic-bas
 
 The interface uses a dark graphite background with restrained gold accents, generous spacing, and an editorial card layout.
 
-> **Development status:** Early development. A successful CI build does not replace testing on a physical Android device. The Android workflow creates a debug APK artifact; it does not publish a GitHub Release or Play Store release.
+> **Development status:** Early development. A successful CI build does not replace testing on a physical Android device. Official APK downloads are provided through GitHub Releases only.
 
 ## Features
 
@@ -47,41 +47,28 @@ The interface uses a dark graphite background with restrained gold accents, gene
 - **Android packaging:** Buildozer and python-for-android build the APK.
 - **Automated checks:** GitHub Actions compiles Python modules and runs unit tests.
 
-## Live project status
-
-These badges are linked to GitHub Actions. Open them to see workflow results and logs.
-
-| Workflow | Purpose |
-| --- | --- |
-| [Python tests](https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml) | Compile modules and run unit tests |
-| [Android APK](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml) | Build and upload a debug APK artifact |
-| [All workflow runs](https://github.com/PauzeDevs/PauzeNews/actions) | Inspect recent runs, logs, and artifacts |
-
-Badges update automatically when GitHub Actions reports a new status. They show workflow status, not a guarantee that every device or network will work.
-
 ## Install PauzeNews on Android
 
-### Option 1 — Download a successful APK artifact
+### Option 1 — Download from GitHub Releases (recommended)
 
-1. Open [Android APK workflow runs](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml).
-2. Open a run marked **Success**.
-3. Scroll to **Artifacts** and download **pauzenews-debug-apk**.
-4. Extract the ZIP and locate the APK file.
-5. Transfer the APK to your Android device and open it. If prompted, allow installation from that source for this install.
-6. Launch PauzeNews and connect to the internet to fetch headlines.
+1. Open the **[PauzeNews Releases page](https://github.com/PauzeDevs/PauzeNews/releases)**.
+2. Open the latest release. Prefer a release marked **Latest**.
+3. Under **Assets**, download the file ending in `.apk` (not the source-code ZIP or TAR.GZ).
+4. Once downloaded, open the APK on your Android device.
+5. If Android prompts you, allow your browser or file manager to **install unknown apps** for this installation, then return and install the APK.
+6. Open PauzeNews and connect to the internet to load headlines.
 
-**Note:** Workflow artifacts expire after 14 days. If no successful run or artifact is available, start a new build using the workflow link above.
+**Only use APK files attached to the official GitHub Releases page.** The app's APK is not distributed through GitHub Actions artifact downloads. If there is no release or no APK under its Assets, a release build has not been published yet.
 
-### Option 2 — Start an APK build
+### Troubleshooting installation
 
-1. Visit the [Android APK workflow](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml).
-2. Select **Run workflow**, choose the main branch, and start it.
-3. Wait for the run to finish successfully.
-4. Download the **pauzenews-debug-apk** artifact from that run.
+- **“App not installed”:** Check that your device is compatible and that you have enough free storage. If an older build is installed, Android may reject an APK signed with a different key; back up anything important before uninstalling the old version.
+- **“For your security, your phone is not allowed to install unknown apps”:** Open the Android settings prompt for the app you used to download the APK and enable permission to install unknown apps, then retry.
+- **No APK in Assets:** Check back after the release build finishes, or report the issue in [GitHub Issues](https://github.com/PauzeDevs/PauzeNews/issues).
 
-Builds can take several minutes because Android tooling and Python-for-Android dependencies must be downloaded and compiled.
+## Build from source
 
-### Option 3 — Run from source
+This section is for developers. Building locally is separate from downloading the official release APK.
 
 Linux is the recommended build environment. On macOS, use a Linux VM or CI runner. On Windows, use WSL2 or Linux for Android packaging.
 
@@ -104,7 +91,19 @@ python -m pip install "Cython==0.29.36" buildozer
 buildozer -v android debug
 ```
 
-The APK is normally placed in the **bin/** directory. The first build may take significantly longer than later builds.
+The locally built APK is normally placed in the **bin/** directory. Locally built APKs are not official releases unless published by PauzeDevs through the repository's release process.
+
+## Live project status
+
+These badges are linked to GitHub Actions. Open them to see workflow results and logs.
+
+| Workflow | Purpose |
+| --- | --- |
+| [Python tests](https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml) | Compile modules and run unit tests |
+| [Android APK](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml) | Build Android APKs; version-tagged builds attach APKs to GitHub Releases |
+| [All workflow runs](https://github.com/PauzeDevs/PauzeNews/actions) | Inspect recent runs and logs |
+
+Badges update automatically when GitHub Actions reports a new status. They show workflow status, not a guarantee that every device or network will work.
 
 ## Run the tests
 
@@ -144,7 +143,7 @@ PauzeNews/
 │   └── test_news_core.py       # Feed parsing and storage tests
 └── .github/workflows/
     ├── tests.yml               # Python CI
-    └── android-apk.yml         # Android debug APK workflow
+    └── android-apk.yml         # Android APK build and release workflow
 ```
 
 ## Privacy and permissions
@@ -156,9 +155,9 @@ PauzeNews/
 
 ## Special links
 
-- **[Repository](https://github.com/PauzeDevs/PauzeNews)**
-- **[Download/build Android APK](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml)**
-- **[Latest workflow runs](https://github.com/PauzeDevs/PauzeNews/actions)**
+- **[Download latest APK release](https://github.com/PauzeDevs/PauzeNews/releases)**
+- **[All releases and version history](https://github.com/PauzeDevs/PauzeNews/releases)**
+- **[Android APK workflow and logs](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml)**
 - **[Python test results](https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml)**
 - **[Browse source code](https://github.com/PauzeDevs/PauzeNews/tree/main)**
 - **[Open an issue](https://github.com/PauzeDevs/PauzeNews/issues/new/choose)**
