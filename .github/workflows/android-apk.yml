@@ -3,6 +3,7 @@ name: Android APK
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags:
       - "v*"
 
@@ -48,7 +49,12 @@ jobs:
           python -m pip install "Cython==0.29.36" buildozer
 
       - name: Build debug APK
-        run: buildozer -v android debug
+        shell: bash
+        run: |
+          set +e
+          yes | buildozer -v android debug
+          build_status=${PIPESTATUS[1]}
+          exit "$build_status"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
