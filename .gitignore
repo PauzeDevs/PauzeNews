@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.env
+*.sqlite3
+.buildozer/
+bin/
+.gradle/
+.idea/
+.vscode/
+.DS_Store
