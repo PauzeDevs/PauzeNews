@@ -18,7 +18,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 # Do not cancel an in-progress Android build just because another push arrives.
 concurrency:
@@ -65,10 +65,11 @@ jobs:
           set -o pipefail
           yes | buildozer -v android debug
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
         with:
-          name: pauzenews-debug-apk
-          path: bin/*.apk
-          if-no-files-found: error
-          retention-days: 14
+          name: PauzeNews ${{ github.ref_name }}
+          generate_release_notes: true
+          files: bin/*.apk
+          fail_on_unmatched_files: true
