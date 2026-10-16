@@ -16,16 +16,16 @@ from urllib.request import Request, urlopen
 REQUEST_TIMEOUT = 12
 MAX_ITEMS_PER_FEED = 35
 
+# Google News RSS is an unauthenticated, key-free headline feed. It includes
+# each article's publisher in its <source> element, which parse_feed preserves.
+# Locale is pinned to India/English so results are relevant to the initial release.
 FEEDS = {
-    "World": [("BBC News", "https://feeds.bbci.co.uk/news/world/rss.xml")],
-    "India": [("BBC News", "https://feeds.bbci.co.uk/news/world/asia/india/rss.xml")],
-    "Technology": [("BBC News", "https://feeds.bbci.co.uk/news/technology/rss.xml")],
-    "Science": [
-        ("BBC News", "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
-        ("NASA", "https://www.nasa.gov/news-release/feed/"),
-    ],
-    "Business": [("BBC News", "https://feeds.bbci.co.uk/news/business/rss.xml")],
-    "Aviation": [("Simple Flying", "https://simpleflying.com/feed/")],
+    "World": [("Google News", "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-IN&gl=IN&ceid=IN:en")],
+    "India": [("Google News", "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-IN&gl=IN&ceid=IN:en")],
+    "Technology": [("Google News", "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-IN&gl=IN&ceid=IN:en")],
+    "Science": [("Google News", "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-IN&gl=IN&ceid=IN:en")],
+    "Business": [("Google News", "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-IN&gl=IN&ceid=IN:en")],
+    "Aviation": [("Google News", "https://news.google.com/rss/search?q=aviation%20airlines&hl=en-IN&gl=IN&ceid=IN:en")],
 }
 ALL_CATEGORIES = ["For You"] + list(FEEDS)
 
@@ -123,7 +123,7 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
             "title": title,
             "url": url,
             "summary": summary,
-            "source": _clean(source_name) or _clean(urlparse(url).netloc),
+            "source": _clean(child_text(entry, {"source"})) or _clean(source_name) or _clean(urlparse(url).netloc),
             "category": category,
             "published": published,
             "fetched_at": int(time.time()),
@@ -143,31 +143,57 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
     errors: list[str] = []
     seen_urls: set[str] = set()
 
-    for selected_category in categories:
-        for source_name, feed_url in FEEDS[selected_category]:
+    sources = [
+        (selected_category, source_name, feed_url)
+        for selected_category in categories
+        for source_name, feed_url in FEEDS[selected_category]
+    ]
+
+    def fetch_one(source):
+        selected_category, source_name, feed_url = source
+        if session is not None:
+            response = session.get(
+                feed_url,
+                timeout=REQUEST_TIMEOUT,
+                headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+            )
+            response.raise_for_status()
+            content = response.content
+        else:
+            request = Request(
+                feed_url,
+                headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+            )
+            with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+                content = response.read()
+        return selected_category, source_name, parse_feed(content, selected_category, source_name)
+
+    # The home feed spans every category. Fetch feeds concurrently so one slow
+    # publisher cannot delay all the other stories for dozens of seconds.
+    if session is None and len(sources) > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=min(8, len(sources))) as pool:
+            futures = {pool.submit(fetch_one, source): source for source in sources}
+            results = []
+            for future in as_completed(futures):
+                source = futures[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    errors.append(f"{source[1]}: {type(exc).__name__}")
+    else:
+        results = []
+        for source in sources:
             try:
-                if session is not None:
-                    # Injectable HTTP session keeps network behavior testable.
-                    response = session.get(
-                        feed_url,
-                        timeout=REQUEST_TIMEOUT,
-                        headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
-                    )
-                    response.raise_for_status()
-                    content = response.content
-                else:
-                    request = Request(
-                        feed_url,
-                        headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
-                    )
-                    with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
-                        content = response.read()
-                for article in parse_feed(content, selected_category, source_name):
-                    if article["url"] not in seen_urls:
-                        seen_urls.add(article["url"])
-                        collected.append(article)
+                results.append(fetch_one(source))
             except Exception as exc:
-                errors.append(f"{source_name}: {type(exc).__name__}")
+                errors.append(f"{source[1]}: {type(exc).__name__}")
+
+    for selected_category, source_name, articles in results:
+        for article in articles:
+            if article["url"] not in seen_urls:
+                seen_urls.add(article["url"])
+                collected.append(article)
 
     collected.sort(key=lambda item: item["fetched_at"], reverse=True)
     return collected, errors
