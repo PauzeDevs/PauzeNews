@@ -41,6 +41,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Automated checks and APK builds
+
+- The `Python tests` workflow compiles the Python modules and runs unit tests on pushes and pull requests to `main`.
+- The `Android APK` workflow can be started manually from GitHub Actions and is also configured for `v*` tags. It builds a debug APK and uploads it as a short-lived workflow artifact; it does not publish a GitHub Release or Play Store release.
+
 ## Build an Android APK
 
 Buildozer is most straightforward on Linux. Android packaging on macOS can be done through a Linux virtual machine or CI runner.
