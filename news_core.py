@@ -23,7 +23,10 @@ FEEDS = {
     "World": [("Google News", "https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-IN&gl=IN&ceid=IN:en")],
     "India": [("Google News", "https://news.google.com/rss/headlines/section/topic/NATION?hl=en-IN&gl=IN&ceid=IN:en")],
     "Technology": [("Google News", "https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-IN&gl=IN&ceid=IN:en")],
-    "Science": [("Google News", "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-IN&gl=IN&ceid=IN:en")],
+    "Science": [
+        ("Google News", "https://news.google.com/rss/headlines/section/topic/SCIENCE?hl=en-IN&gl=IN&ceid=IN:en"),
+        ("NASA", "https://www.nasa.gov/news-release/feed/"),
+    ],
     "Business": [("Google News", "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-IN&gl=IN&ceid=IN:en")],
     "Aviation": [("Google News", "https://news.google.com/rss/search?q=aviation%20airlines&hl=en-IN&gl=IN&ceid=IN:en")],
 }
