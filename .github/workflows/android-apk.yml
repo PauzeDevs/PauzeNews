@@ -3,6 +3,11 @@ name: Android APK
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+    paths:
+      - "buildozer.spec"
+      - ".github/workflows/android-apk.yml"
     tags:
       - "v*"
 
