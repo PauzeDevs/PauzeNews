@@ -69,4 +69,6 @@ The MVP does not require user accounts. Bookmarks and preferences are stored loc
 
 ## License
 
-A license has not yet been selected. Until one is added, the repository should not be assumed to grant permission to redistribute the source code.
+PauzeNews is distributed under the **PauzeNews Proprietary License** in [LICENSE](LICENSE).
+
+Personal, non-commercial use is permitted. Redistribution, repackaging, modification, derivative works, and commercial use require prior written permission from PauzeDevs. Copyright, license, and attribution notices must be retained. Third-party dependencies and news content remain subject to their own terms.
