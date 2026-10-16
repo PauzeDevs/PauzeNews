@@ -83,7 +83,7 @@ class PauzeNewsApp(App):
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
 
         # Extra top padding keeps the header clear of Android's status-bar inset.
-        root = BoxLayout(orientation="vertical", padding=[dp(14), dp(22), dp(14), dp(16)], spacing=dp(10))
+        root = BoxLayout(orientation="vertical", padding=[dp(14), dp(32), dp(14), dp(16)], spacing=dp(10))
         header = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
         brand = BoxLayout(orientation="vertical")
         brand.add_widget(Label(text="[b]PauzeNews[/b]", markup=True, color=TEXT, font_size="23sp",
