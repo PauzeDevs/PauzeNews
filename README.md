@@ -57,9 +57,11 @@ buildozer android debug
 
 The first Android build downloads the Android toolchain and can take a while. See `buildozer.spec` for package settings.
 
-## News source policy
+## News sources
 
-PauzeNews displays headlines, short excerpts where supplied by feeds, publisher names, timestamps, and links to the original articles. It does not intentionally republish full articles. Each source must be reviewed for its feed terms and attribution requirements before public release.
+PauzeNews currently uses Google News RSS topic feeds for World, India, Technology, Science, and Business, plus an Aviation search feed. These feeds do not require an API key. Publisher attribution is taken from each RSS item's source metadata when supplied; NASA is retained as a secondary Science feed.
+
+The app displays headlines, short excerpts where supplied by feeds, publisher names, timestamps, and links to the original articles. It does not intentionally republish full articles. Source availability depends on connectivity and feed uptime, and feed terms and attribution requirements should be reviewed before public release.
 
 ## Privacy
 
