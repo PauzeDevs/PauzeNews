@@ -1,8 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
-from news_core import ArticleStore, parse_feed
+from news_core import ArticleStore, FEEDS, fetch_category, parse_feed
 
 
 RSS = b"""<?xml version="1.0"?>
@@ -38,10 +39,46 @@ class FeedParsingTests(unittest.TestCase):
             self.assertFalse(store.is_bookmarked(article_id))
 
     def test_unknown_category_returns_error_without_network(self):
-        from news_core import fetch_category
-        articles, errors = fetch_category("Made Up Category")
+        session = Mock()
+        articles, errors = fetch_category("Made Up Category", session=session)
         self.assertEqual(articles, [])
         self.assertTrue(errors)
+        session.get.assert_not_called()
+
+    def test_fetch_category_sends_timeout_and_user_agent(self):
+        response = Mock()
+        response.content = RSS
+        response.raise_for_status.return_value = None
+        session = Mock()
+        session.get.return_value = response
+
+        articles, errors = fetch_category("World", session=session)
+
+        self.assertFalse(errors)
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["category"], "World")
+        session.get.assert_called_once_with(
+            FEEDS["World"][0][1],
+            timeout=12,
+            headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+        )
+
+    def test_one_failed_source_does_not_discard_other_sources(self):
+        good = Mock()
+        good.content = RSS
+        good.raise_for_status.return_value = None
+        bad = Mock()
+        bad.raise_for_status.side_effect = RuntimeError("feed unavailable")
+        session = Mock()
+        session.get.side_effect = [bad, good]
+
+        articles, errors = fetch_category("Science", session=session)
+
+        self.assertEqual(len(FEEDS["Science"]), 2)
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["source"], FEEDS["Science"][1][0])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("RuntimeError", errors[0])
 
 
 if __name__ == "__main__":
