@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import html
 import sqlite3
+import ssl
 import time
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -12,6 +13,13 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 from urllib.request import Request, urlopen
+
+try:
+    import certifi
+    SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    # Keep desktop installs working even if certifi is not installed.
+    SSL_CONTEXT = ssl.create_default_context()
 
 REQUEST_TIMEOUT = 12
 MAX_ITEMS_PER_FEED = 35
@@ -167,7 +175,7 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                 feed_url,
                 headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
             )
-            with urlopen(request, timeout=REQUEST_TIMEOUT) as response:
+            with urlopen(request, timeout=REQUEST_TIMEOUT, context=SSL_CONTEXT) as response:
                 content = response.read()
         return selected_category, source_name, parse_feed(content, selected_category, source_name)
 
