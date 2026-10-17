@@ -220,6 +220,7 @@ class PauzeNewsApp(App):
         self._article_content = None
         self._article_webview = None
         self._article_back_listener = None
+        self._article_key_listener = None
         self.category = "For You"
         self.show_saved = False
         self.loading = False
@@ -548,6 +549,9 @@ class PauzeNewsApp(App):
     @run_on_ui_thread
     def _open_article_reader(self, url, title):
         """Display publisher pages inside a native Android WebView overlay."""
+        content = None
+        reader = None
+        webview = None
         try:
             from jnius import PythonJavaClass, autoclass, java_method
 
@@ -637,20 +641,50 @@ class PauzeNewsApp(App):
                 def onClick(self, _view):
                     self.app._reader_back()
 
+            class ReaderKeyListener(PythonJavaClass):
+                __javainterfaces__ = ["android/view/View$OnKeyListener"]
+                __javacontext__ = "app"
+
+                def __init__(self, app):
+                    super().__init__()
+                    self.app = app
+
+                @java_method("(Landroid/view/View;ILandroid/view/KeyEvent;)Z")
+                def onKey(self, _view, key_code, event):
+                    # Android KEYCODE_BACK = 4, ACTION_DOWN = 0.
+                    if key_code == 4 and event.getAction() == 0:
+                        self.app._reader_back()
+                        return True
+                    return False
+
             self._article_back_listener = BackClickListener(self)
+            self._article_key_listener = ReaderKeyListener(self)
             back.setOnClickListener(self._article_back_listener)
+            webview.setFocusableInTouchMode(True)
+            webview.setOnKeyListener(self._article_key_listener)
 
             params = FrameLayout.LayoutParams(-1, -1)
             content.addView(reader, params)
             self._article_overlay = reader
             self._article_content = content
             self._article_webview = webview
+            webview.requestFocus()
             webview.loadUrl(url)
         except Exception:
             Logger.exception("PauzeNews: failed to open the in-app article reader")
+            try:
+                if content is not None and reader is not None:
+                    content.removeView(reader)
+                if webview is not None:
+                    webview.stopLoading()
+                    webview.destroy()
+            except Exception:
+                Logger.exception("PauzeNews: reader cleanup failed after an open error")
             self._article_overlay = None
             self._article_content = None
             self._article_webview = None
+            self._article_back_listener = None
+            self._article_key_listener = None
             Clock.schedule_once(
                 lambda _dt: setattr(self.status, "text", "Couldn't open the in-app reader. Please try again."),
                 0,
@@ -666,6 +700,7 @@ class PauzeNewsApp(App):
         self._article_content = None
         self._article_webview = None
         self._article_back_listener = None
+        self._article_key_listener = None
 
         try:
             if content is not None and overlay is not None:
