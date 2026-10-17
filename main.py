@@ -215,12 +215,13 @@ class NewsCard(GlassSurface):
         self.featured = featured
         super().__init__(
             orientation="vertical",
-            spacing=dp(4),
-            padding=[dp(12), dp(9), dp(12), dp(9)],
+            spacing=dp(7),
+            padding=[dp(16), dp(13), dp(16), dp(13)],
             surface_color=PANEL_RAISED if featured else PANEL,
             radius=dp(17 if featured else 15),
-            size_hint_y=None,
-            height=dp(170 if featured and summary else 154 if summary else 126),
+            size_hint=(None, None),
+            width=max(dp(286), min(Window.width * 0.82, dp(420))),
+            height=dp(198 if summary else 170),
             **kwargs,
         )
         self.article = article
@@ -261,7 +262,7 @@ class NewsCard(GlassSurface):
             font_size="9sp",
             bold=True,
             height=dp(16),
-            text_size=(max(dp(150), Window.width - dp(165)), dp(16)),
+            text_size=(max(dp(130), self.width - dp(126)), dp(16)),
         ))
         meta.add_widget(_text_label(
             _published_label(article.get("published", "")),
@@ -280,7 +281,7 @@ class NewsCard(GlassSurface):
             font_size="15sp" if featured else "14sp",
             bold=True,
             height=dp(42),
-            text_size=(max(dp(180), Window.width - dp(56)), dp(42)),
+            text_size=(max(dp(210), self.width - dp(30)), dp(42)),
             valign="top",
         ))
 
@@ -290,7 +291,7 @@ class NewsCard(GlassSurface):
                 color=MUTED,
                 font_size="11sp",
                 height=dp(30),
-                text_size=(max(dp(180), Window.width - dp(56)), dp(30)),
+                text_size=(max(dp(210), self.width - dp(30)), dp(30)),
                 valign="top",
             ))
 
@@ -484,19 +485,27 @@ class PauzeNewsApp(App):
         feed_heading.add_widget(self.status)
         root.add_widget(feed_heading)
 
+        # Horizontal story rail: each story is a consistent editorial tile.
+        # Vertical scrolling is intentionally disabled in the feed so the main
+        # interaction is a left-to-right browse, with category pills above.
         self.scroll = ScrollView(
-            do_scroll_x=False,
-            do_scroll_y=True,
-            bar_width=dp(3),
-            scroll_type=["bars", "content"],
+            do_scroll_x=True,
+            do_scroll_y=False,
+            bar_width=0,
+            scroll_type=["content"],
+            size_hint_y=None,
+            height=dp(226),
+            effect_cls="ScrollEffect",
         )
         self.card_list = BoxLayout(
-            orientation="vertical",
-            spacing=dp(10),
-            padding=[0, dp(2), 0, dp(12)],
+            orientation="horizontal",
+            spacing=dp(12),
+            padding=[dp(1), dp(2), dp(18), dp(12)],
+            size_hint_x=None,
             size_hint_y=None,
+            height=dp(214),
         )
-        self.card_list.bind(minimum_height=self.card_list.setter("height"))
+        self.card_list.bind(minimum_width=self.card_list.setter("width"))
         self.scroll.add_widget(self.card_list)
         root.add_widget(self.scroll)
 
@@ -609,8 +618,10 @@ class PauzeNewsApp(App):
                 message,
                 color=MUTED,
                 font_size="12sp",
-                height=dp(84),
-                text_size=(max(dp(220), Window.width - dp(48)), dp(84)),
+                size_hint=(None, None),
+                width=max(dp(260), Window.width * 0.78),
+                height=dp(160),
+                text_size=(max(dp(240), Window.width * 0.72), dp(160)),
                 halign="center",
             ))
             if not self.loading and not self.show_saved:
@@ -620,6 +631,8 @@ class PauzeNewsApp(App):
                     color=ACCENT,
                     height=dp(44),
                 )
+                retry.size_hint_x = None
+                retry.width = dp(140)
                 retry.bind(on_release=lambda *_: self.refresh_news())
                 self.card_list.add_widget(retry)
             return
@@ -632,8 +645,10 @@ class PauzeNewsApp(App):
                 "Load more headlines",
                 background=ACCENT_DARK,
                 color=ACCENT,
-                height=dp(46),
+                height=dp(48),
             )
+            more.size_hint_x = None
+            more.width = dp(180)
             more.bind(on_release=self._load_more)
             self.card_list.add_widget(more)
 
