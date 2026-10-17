@@ -105,7 +105,8 @@ jobs:
             # PauzeNews ${{ github.ref_name }}
 
             ## Highlights
-            - Compact, full-width story cards with clean READ and SAVE actions.
+            - Premium charcoal interface with warm metallic-gold accents and rounded topic pills.
+            - Compact, full-width editorial cards with clean READ and SAVE actions.
             - Publisher articles open inside PauzeNews instead of jumping to an external browser.
             - In-reader navigation supports both publisher-page history and Android Back.
             - Android package version is aligned with the release.
@@ -138,8 +139,8 @@ jobs:
             The first stable release of PauzeNews, built from the latest main branch.
 
             ## Highlights
-            - Refreshed dark graphite interface with cool-blue accents and outlined panels.
-            - Horizontal story cards with clear Open and Save actions.
+            - Premium charcoal interface with warm metallic-gold accents and rounded topic pills.
+            - Compact full-width editorial cards with clear READ and SAVE actions.
             - Improved startup rendering and safer loading/error handling.
             - Staged initial story rendering with a Load More option.
             - Reduced concurrent feed requests for a more controlled startup experience.
