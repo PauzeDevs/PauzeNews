@@ -181,8 +181,6 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
 
     collected: list[dict] = []
     errors: list[str] = []
-    seen_urls: set[str] = set()
-
     sources = [
         (selected_category, source_name, feed_url)
         for selected_category in categories
