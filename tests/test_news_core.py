@@ -95,6 +95,7 @@ class FeedParsingTests(unittest.TestCase):
             row = store.list_articles()[0]
             self.assertGreater(row["published_at"], 0)
             self.assertEqual(row["id"], "legacy")
+            self.assertEqual(len(store.list_articles(category="World")), 1)
 
     def test_store_and_bookmark(self):
         with tempfile.TemporaryDirectory() as directory:
