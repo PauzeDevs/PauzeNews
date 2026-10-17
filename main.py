@@ -388,6 +388,7 @@ class PauzeNewsApp(App):
         self.category = "For You"
         self.show_saved = False
         self.loading = False
+        self._refresh_generation = 0
         self.articles = []
         self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
@@ -583,6 +584,9 @@ class PauzeNewsApp(App):
         self.render_articles()
 
     def select_category(self, category):
+        # Invalidate any in-flight response before changing the visible category.
+        self._refresh_generation += 1
+        self.loading = False
         self.category = category
         self.visible_limit = 8
         self.show_saved = category == "Saved"
@@ -593,8 +597,10 @@ class PauzeNewsApp(App):
             self.refresh_news()
 
     def refresh_news(self):
-        if self.loading:
-            return
+        # Each request gets a generation token. Only the newest request may
+        # update the cache/UI, preventing stale category results from winning.
+        self._refresh_generation += 1
+        generation = self._refresh_generation
         self.loading = True
         self.status.text = "Loading headlines…"
         self.render_articles()
@@ -608,6 +614,8 @@ class PauzeNewsApp(App):
                 articles, errors = [], [type(exc).__name__]
 
             def finish(_dt):
+                if generation != self._refresh_generation:
+                    return
                 try:
                     if articles:
                         self.store.save_articles(articles)
