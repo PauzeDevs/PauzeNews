@@ -40,6 +40,7 @@ The interface uses a dark matte graphite background, restrained blue highlights,
 - **No API key required:** Google News RSS topic feeds; NASA remains a secondary Science source.
 - **Publisher attribution:** Uses source metadata when supplied by a feed.
 - **Search:** Filter cached headlines by title, publisher, or summary.
+- **In-app article reader:** Open publisher pages inside PauzeNews, navigate page history, and return to headlines with Back.
 - **Bookmarks:** Save stories locally using SQLite.
 - **Offline-friendly cache:** Previously fetched headlines may remain available when refresh fails.
 - **Honest error states:** Feed failures are shown instead of inventing headlines.

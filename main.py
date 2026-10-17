@@ -4,6 +4,17 @@ from __future__ import annotations
 import threading
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlparse
+
+from kivy.utils import platform
+from kivy.uix.widget import Widget
+
+try:
+    from android.runnable import run_on_ui_thread
+except ImportError:
+    # Keep the module importable for desktop linting and unit-test collection.
+    def run_on_ui_thread(function):
+        return function
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -112,91 +123,87 @@ def _action_button(text, *, background, color=TEXT, font_size="11sp", bold=True,
 
 
 class NewsCard(GlassSurface):
-    """Compact landscape story card; story information and actions sit side by side."""
+    """Compact editorial story card with a readable hierarchy and simple actions."""
 
     def __init__(self, article, app, **kwargs):
         summary = article.get("summary", "")
         super().__init__(
-            orientation="horizontal",
-            spacing=dp(12),
-            padding=[dp(14), dp(12), dp(12), dp(12)],
+            orientation="vertical",
+            spacing=dp(4),
+            padding=[dp(12), dp(9), dp(12), dp(9)],
             surface_color=PANEL,
-            radius=dp(18),
+            radius=dp(16),
             size_hint_y=None,
-            height=dp(184 if summary else 148),
+            height=dp(152 if summary else 124),
             **kwargs,
         )
         self.article = article
         self.app = app
 
-        # Leave a dedicated action rail on the right, so long titles do not
-        # collide with the buttons on narrow Android screens.
-        content_width = max(dp(145), Window.width - dp(176))
-        content = BoxLayout(
-            orientation="vertical",
-            spacing=dp(5),
-            size_hint_x=1,
-        )
-
         published = _shorten(article.get("published", ""), 22)
         category = article.get("category", "News")
         source = _shorten(article.get("source", "Source"), 25)
         meta = "  ·  ".join(part for part in (category, source, published) if part)
-        content.add_widget(_text_label(
-            meta,
+        self.add_widget(_text_label(
+            _shorten(meta, 72),
             color=ACCENT,
             font_size="10sp",
             bold=True,
-            height=dp(18),
-            text_size=(content_width, dp(18)),
+            height=dp(16),
+            text_size=(max(dp(180), Window.width - dp(56)), dp(16)),
         ))
 
-        title = _text_label(
-            _shorten(article.get("title", "Untitled"), 140),
+        self.add_widget(_text_label(
+            _shorten(article.get("title", "Untitled"), 108),
             color=TEXT,
-            font_size="16sp",
+            font_size="15sp",
             bold=True,
-            height=dp(62),
-            text_size=(content_width, dp(62)),
+            height=dp(42),
+            text_size=(max(dp(180), Window.width - dp(56)), dp(42)),
             valign="top",
-        )
-        content.add_widget(title)
+        ))
 
         if summary:
-            content.add_widget(_text_label(
-                _shorten(summary, 190),
+            self.add_widget(_text_label(
+                _shorten(summary, 142),
                 color=MUTED,
                 font_size="11sp",
-                height=dp(42),
-                text_size=(content_width, dp(42)),
+                height=dp(32),
+                text_size=(max(dp(180), Window.width - dp(56)), dp(32)),
                 valign="top",
             ))
-        self.add_widget(content)
 
         actions = BoxLayout(
-            orientation="vertical",
-            size_hint_x=None,
-            width=dp(78),
-            spacing=dp(8),
-            padding=[0, dp(14), 0, dp(10)],
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(30),
+            spacing=dp(7),
         )
+        actions.add_widget(Widget())
+
         read = _action_button(
-            "Open ↗",
+            "READ",
             background=ACCENT,
             color=BG,
-            font_size="11sp",
-            height=dp(38),
+            font_size="10sp",
+            height=dp(30),
         )
+        read.size_hint_x = None
+        read.width = dp(82)
         read.bind(on_release=lambda *_: self.app.open_article(article))
+
         saved = self.app.store.is_bookmarked(article["id"])
         bookmark = _action_button(
-            "★ Saved" if saved else "☆ Save",
+            "SAVED" if saved else "SAVE",
             background=ACCENT_DARK if saved else PANEL_RAISED,
             color=ACCENT if saved else MUTED,
             font_size="10sp",
-            height=dp(38),
+            height=dp(30),
         )
+        bookmark.size_hint_x = None
+        bookmark.width = dp(72)
         bookmark.bind(on_release=lambda *_: self.app.toggle_bookmark(article))
+
         actions.add_widget(read)
         actions.add_widget(bookmark)
         self.add_widget(actions)
@@ -208,6 +215,12 @@ class PauzeNewsApp(App):
     def build(self):
         Window.clearcolor = BG
         Window.softinput_mode = "below_target"
+        Window.bind(on_keyboard=self._handle_keyboard)
+        self._article_overlay = None
+        self._article_content = None
+        self._article_webview = None
+        self._article_back_listener = None
+        self._article_key_listener = None
         self.category = "For You"
         self.show_saved = False
         self.loading = False
@@ -220,14 +233,14 @@ class PauzeNewsApp(App):
         # status/navigation areas on devices where SDL2 reports edge overlap.
         root = BoxLayout(
             orientation="vertical",
-            padding=[dp(18), dp(34), dp(18), dp(20)],
-            spacing=dp(12),
+            padding=[dp(14), dp(12), dp(14), dp(10)],
+            spacing=dp(10),
         )
 
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(66),
+            height=dp(58),
             spacing=dp(10),
         )
         brand = BoxLayout(orientation="vertical", spacing=0)
@@ -326,8 +339,8 @@ class PauzeNewsApp(App):
             "Preparing your briefing…",
             color=MUTED,
             font_size="11sp",
-            height=dp(30),
-            text_size=(max(dp(220), Window.width - dp(40)), dp(30)),
+            height=dp(24),
+            text_size=(max(dp(220), Window.width - dp(40)), dp(24)),
         )
         root.add_widget(self.status)
 
@@ -494,14 +507,214 @@ class PauzeNewsApp(App):
 
     def open_article(self, article):
         url = article.get("url", "")
-        if url.startswith(("https://", "http://")):
+        parsed = urlparse(url)
+        if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+            self.status.text = "This story has an invalid article link."
+            return
+
+        title = article.get("title", "Article")
+        if platform != "android":
+            # Desktop fallback; Android always uses the embedded reader below.
             try:
                 opened = webbrowser.open(url)
                 if opened is False:
                     self.status.text = "Could not open the link on this device."
             except Exception:
                 Logger.exception("PauzeNews: could not open article")
-                self.status.text = "Could not open this article. Try your browser."
+                self.status.text = "Could not open this article."
+            return
+
+        self.status.text = "Opening article in PauzeNews…"
+        self._open_article_reader(url, title)
+
+    def _handle_keyboard(self, _window, key, *_args):
+        # Android Back/Escape returns from the article view instead of exiting.
+        if key in (27, 1001) and self._article_overlay is not None:
+            self._reader_back()
+            return True
+        return False
+
+    @run_on_ui_thread
+    def _reader_back(self):
+        """Navigate back within the publisher page before closing the reader."""
+        webview = self._article_webview
+        try:
+            if webview is not None and webview.canGoBack():
+                webview.goBack()
+                return
+        except Exception:
+            Logger.exception("PauzeNews: could not navigate back in the article")
+        self.close_article()
+
+    @run_on_ui_thread
+    def _open_article_reader(self, url, title):
+        """Display publisher pages inside a native Android WebView overlay."""
+        content = None
+        reader = None
+        webview = None
+        try:
+            from jnius import PythonJavaClass, autoclass, java_method
+
+            activity = autoclass("org.kivy.android.PythonActivity").mActivity
+            content = activity.findViewById(16908290)  # android.R.id.content
+            if content is None:
+                raise RuntimeError("Android activity content view is unavailable")
+
+            # Remove any previously opened reader before creating another one.
+            if self._article_overlay is not None and self._article_content is not None:
+                self._article_content.removeView(self._article_overlay)
+
+            Color = autoclass("android.graphics.Color")
+            Gravity = autoclass("android.view.Gravity")
+            FrameLayout = autoclass("android.widget.FrameLayout")
+            LinearLayout = autoclass("android.widget.LinearLayout")
+            TextView = autoclass("android.widget.TextView")
+            WebView = autoclass("android.webkit.WebView")
+            WebViewClient = autoclass("android.webkit.WebViewClient")
+            WebChromeClient = autoclass("android.webkit.WebChromeClient")
+
+            density = float(activity.getResources().getDisplayMetrics().density)
+
+            def px(value):
+                return int(value * density)
+
+            reader = LinearLayout(activity)
+            reader.setOrientation(LinearLayout.VERTICAL)
+            reader.setBackgroundColor(Color.parseColor("#080A0E"))
+
+            toolbar = LinearLayout(activity)
+            toolbar.setOrientation(LinearLayout.HORIZONTAL)
+            toolbar.setGravity(Gravity.CENTER_VERTICAL)
+            toolbar.setPadding(px(12), 0, px(12), 0)
+            toolbar.setBackgroundColor(Color.parseColor("#10151D"))
+
+            back = TextView(activity)
+            back.setText("BACK")
+            back.setTextColor(Color.parseColor("#70B0FF"))
+            back.setTextSize(12)
+            back.setGravity(Gravity.CENTER)
+            back.setClickable(True)
+            back.setFocusable(True)
+            toolbar.addView(back, LinearLayout.LayoutParams(px(64), px(56)))
+
+            heading = LinearLayout(activity)
+            heading.setOrientation(LinearLayout.VERTICAL)
+            heading.setGravity(Gravity.CENTER_VERTICAL)
+            brand = TextView(activity)
+            brand.setText("PAUZENEWS")
+            brand.setTextColor(Color.parseColor("#F2F5FA"))
+            brand.setTextSize(16)
+            brand.setTypeface(None, 1)
+            subtitle = TextView(activity)
+            subtitle.setText(_shorten(title, 52))
+            subtitle.setTextColor(Color.parseColor("#9AA6B7"))
+            subtitle.setTextSize(11)
+            subtitle.setSingleLine(True)
+            heading.addView(brand, LinearLayout.LayoutParams(-1, px(25)))
+            heading.addView(subtitle, LinearLayout.LayoutParams(-1, px(20)))
+            toolbar.addView(heading, LinearLayout.LayoutParams(0, px(56), 1.0))
+            reader.addView(toolbar, LinearLayout.LayoutParams(-1, px(60)))
+
+            webview = WebView(activity)
+            settings = webview.getSettings()
+            settings.setJavaScriptEnabled(True)
+            settings.setDomStorageEnabled(True)
+            settings.setLoadsImagesAutomatically(True)
+            settings.setSupportMultipleWindows(False)
+            settings.setJavaScriptCanOpenWindowsAutomatically(False)
+            settings.setAllowFileAccess(False)
+            settings.setAllowContentAccess(False)
+            webview.setWebViewClient(WebViewClient())
+            webview.setWebChromeClient(WebChromeClient())
+            webview.setBackgroundColor(Color.WHITE)
+            reader.addView(webview, LinearLayout.LayoutParams(-1, 0, 1.0))
+
+            class BackClickListener(PythonJavaClass):
+                __javainterfaces__ = ["android/view/View$OnClickListener"]
+                __javacontext__ = "app"
+
+                def __init__(self, app):
+                    super().__init__()
+                    self.app = app
+
+                @java_method("(Landroid/view/View;)V")
+                def onClick(self, _view):
+                    self.app._reader_back()
+
+            class ReaderKeyListener(PythonJavaClass):
+                __javainterfaces__ = ["android/view/View$OnKeyListener"]
+                __javacontext__ = "app"
+
+                def __init__(self, app):
+                    super().__init__()
+                    self.app = app
+
+                @java_method("(Landroid/view/View;ILandroid/view/KeyEvent;)Z")
+                def onKey(self, _view, key_code, event):
+                    # Android KEYCODE_BACK = 4, ACTION_DOWN = 0.
+                    if key_code == 4 and event.getAction() == 0:
+                        self.app._reader_back()
+                        return True
+                    return False
+
+            self._article_back_listener = BackClickListener(self)
+            self._article_key_listener = ReaderKeyListener(self)
+            back.setOnClickListener(self._article_back_listener)
+            webview.setFocusableInTouchMode(True)
+            webview.setOnKeyListener(self._article_key_listener)
+
+            params = FrameLayout.LayoutParams(-1, -1)
+            content.addView(reader, params)
+            self._article_overlay = reader
+            self._article_content = content
+            self._article_webview = webview
+            webview.requestFocus()
+            webview.loadUrl(url)
+        except Exception:
+            Logger.exception("PauzeNews: failed to open the in-app article reader")
+            try:
+                if content is not None and reader is not None:
+                    content.removeView(reader)
+                if webview is not None:
+                    webview.stopLoading()
+                    webview.destroy()
+            except Exception:
+                Logger.exception("PauzeNews: reader cleanup failed after an open error")
+            self._article_overlay = None
+            self._article_content = None
+            self._article_webview = None
+            self._article_back_listener = None
+            self._article_key_listener = None
+            Clock.schedule_once(
+                lambda _dt: setattr(self.status, "text", "Couldn't open the in-app reader. Please try again."),
+                0,
+            )
+
+    @run_on_ui_thread
+    def close_article(self):
+        """Close the embedded reader and return to the headline list."""
+        overlay = self._article_overlay
+        content = self._article_content
+        webview = self._article_webview
+        self._article_overlay = None
+        self._article_content = None
+        self._article_webview = None
+        self._article_back_listener = None
+        self._article_key_listener = None
+
+        try:
+            if content is not None and overlay is not None:
+                content.removeView(overlay)
+            if webview is not None:
+                webview.stopLoading()
+                webview.destroy()
+            if hasattr(self, "status"):
+                Clock.schedule_once(
+                    lambda _dt: setattr(self.status, "text", "Back to headlines"),
+                    0,
+                )
+        except Exception:
+            Logger.exception("PauzeNews: could not close the article reader")
 
     def on_pause(self):
         return True
