@@ -234,6 +234,7 @@ class NewsCard(GlassSurface):
             **kwargs,
         )
         self._body_labels = []
+        self._dynamic_labels = {}
         self._meta_source = None
         self._meta_time = None
         self._lead_rail = None
@@ -296,10 +297,12 @@ class NewsCard(GlassSurface):
             font_size="17sp" if featured else "15sp",
             bold=True,
             height=dp(48 if featured else 44),
-            text_size=(max(dp(160), self.width - dp(34)), dp(48 if featured else 44)),
+            text_size=(max(dp(160), self.width - dp(34)), None),
             valign="top",
         )
         self._body_labels.append(headline)
+        self._dynamic_labels[headline] = (dp(42 if featured else 36), dp(100))
+        headline.bind(texture_size=self._fit_dynamic_label)
         self.add_widget(headline)
 
         if summary:
@@ -308,10 +311,12 @@ class NewsCard(GlassSurface):
                 color=MUTED,
                 font_size="11sp",
                 height=dp(40),
-                text_size=(max(dp(160), self.width - dp(34)), dp(40)),
+                text_size=(max(dp(160), self.width - dp(34)), None),
                 valign="top",
             )
             self._body_labels.append(summary_label)
+            self._dynamic_labels[summary_label] = (dp(28), dp(84))
+            summary_label.bind(texture_size=self._fit_dynamic_label)
             self.add_widget(summary_label)
 
         actions = BoxLayout(
@@ -348,14 +353,23 @@ class NewsCard(GlassSurface):
         actions.add_widget(read)
         actions.add_widget(bookmark)
         self.add_widget(actions)
+        # Let the card grow to fit wrapped text instead of clipping it on narrow screens.
+        self.bind(minimum_height=self.setter("height"))
         self.bind(width=self._sync_text_sizes)
         self._sync_text_sizes()
         self._sync_lead_rail()
 
+    def _fit_dynamic_label(self, label, texture_size):
+        minimum, maximum = self._dynamic_labels.get(label, (dp(24), dp(100)))
+        label.height = max(minimum, min(maximum, texture_size[1] + dp(3)))
+
     def _sync_text_sizes(self, *_):
         inner_width = max(dp(160), self.width - dp(34))
         for label in self._body_labels:
-            label.text_size = (inner_width, label.height)
+            if label in self._dynamic_labels:
+                label.text_size = (inner_width, None)
+            else:
+                label.text_size = (inner_width, label.height)
         if self._meta_source is not None:
             self._meta_source.text_size = (
                 max(dp(100), self.width - dp(134)),
@@ -388,6 +402,7 @@ class PauzeNewsApp(App):
         self.category = "For You"
         self.show_saved = False
         self.loading = False
+        self._refresh_generation = 0
         self.articles = []
         self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
@@ -583,6 +598,9 @@ class PauzeNewsApp(App):
         self.render_articles()
 
     def select_category(self, category):
+        # Invalidate any in-flight response before changing the visible category.
+        self._refresh_generation += 1
+        self.loading = False
         self.category = category
         self.visible_limit = 8
         self.show_saved = category == "Saved"
@@ -593,8 +611,10 @@ class PauzeNewsApp(App):
             self.refresh_news()
 
     def refresh_news(self):
-        if self.loading:
-            return
+        # Each request gets a generation token. Only the newest request may
+        # update the cache/UI, preventing stale category results from winning.
+        self._refresh_generation += 1
+        generation = self._refresh_generation
         self.loading = True
         self.status.text = "Loading headlines…"
         self.render_articles()
@@ -608,6 +628,8 @@ class PauzeNewsApp(App):
                 articles, errors = [], [type(exc).__name__]
 
             def finish(_dt):
+                if generation != self._refresh_generation:
+                    return
                 try:
                     if articles:
                         self.store.save_articles(articles)
@@ -959,7 +981,7 @@ class PauzeNewsApp(App):
             self._article_webview = webview
             webview.requestFocus()
             webview.loadUrl(url)
-            self.status.text = "Reader opened · Use Back to return to headlines"
+            self.status.text = "Loading article… If the page stays blank, use OPEN ↗ in the reader toolbar."
         except Exception as exc:
             Logger.exception("PauzeNews: failed to open the in-app article reader")
             try:

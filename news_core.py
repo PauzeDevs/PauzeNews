@@ -6,6 +6,8 @@ import html
 import sqlite3
 import ssl
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
@@ -23,6 +25,7 @@ except Exception:
 
 REQUEST_TIMEOUT = 12
 MAX_ITEMS_PER_FEED = 35
+MAX_FEED_BYTES = 2 * 1024 * 1024
 
 # Google News RSS is an unauthenticated, key-free headline feed. It includes
 # each article's publisher in its <source> element, which parse_feed preserves.
@@ -64,6 +67,31 @@ def _clean(value: object) -> str:
 def _safe_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def published_timestamp(value: str) -> int:
+    """Convert common RSS/Atom publication dates to Unix seconds; return 0 if unknown."""
+    if not value:
+        return 0
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    try:
+        return int(parsed.timestamp())
+    except (ValueError, OverflowError, OSError):
+        return 0
+
+
+def article_sort_key(article: dict) -> tuple[int, int]:
+    """Sort by publisher publication time, then fetch time for undated/tied stories."""
+    published_at = int(article.get("published_at") or published_timestamp(article.get("published", "")))
+    return published_at, int(article.get("fetched_at") or 0)
 
 
 def parse_feed(content: bytes | str, category: str, source_name: str) -> list[dict]:
@@ -137,6 +165,7 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
             "source": _clean(child_text(entry, {"source"})) or _clean(source_name) or _clean(urlparse(url).netloc),
             "category": category,
             "published": published,
+            "published_at": published_timestamp(published),
             "fetched_at": int(time.time()),
         })
     return articles
@@ -152,8 +181,6 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
 
     collected: list[dict] = []
     errors: list[str] = []
-    seen_urls: set[str] = set()
-
     sources = [
         (selected_category, source_name, feed_url)
         for selected_category in categories
@@ -176,7 +203,9 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                 headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
             )
             with urlopen(request, timeout=REQUEST_TIMEOUT, context=SSL_CONTEXT) as response:
-                content = response.read()
+                content = response.read(MAX_FEED_BYTES + 1)
+        if len(content) > MAX_FEED_BYTES:
+            raise ValueError(f"Feed response exceeds {MAX_FEED_BYTES} byte limit")
         return selected_category, source_name, parse_feed(content, selected_category, source_name)
 
     # The home feed spans every category. Fetch feeds concurrently so one slow
@@ -185,13 +214,15 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=min(4, len(sources))) as pool:
             futures = {pool.submit(fetch_one, source): source for source in sources}
-            results = []
+            results_by_source = {}
             for future in as_completed(futures):
                 source = futures[future]
                 try:
-                    results.append(future.result())
+                    results_by_source[source] = future.result()
                 except Exception as exc:
                     errors.append(f"{source[1]}: {type(exc).__name__}")
+            # Preserve configured category/source priority regardless of network timing.
+            results = [results_by_source[source] for source in sources if source in results_by_source]
     else:
         results = []
         for source in sources:
@@ -200,13 +231,20 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
             except Exception as exc:
                 errors.append(f"{source[1]}: {type(exc).__name__}")
 
+    by_url = {}
     for selected_category, source_name, articles in results:
         for article in articles:
-            if article["url"] not in seen_urls:
-                seen_urls.add(article["url"])
+            url = article["url"]
+            if url not in by_url:
+                article["categories"] = [article["category"]]
+                by_url[url] = article
                 collected.append(article)
+            else:
+                existing = by_url[url]
+                if selected_category not in existing["categories"]:
+                    existing["categories"].append(selected_category)
 
-    collected.sort(key=lambda item: item["fetched_at"], reverse=True)
+    collected.sort(key=article_sort_key, reverse=True)
     return collected, errors
 
 
@@ -234,8 +272,36 @@ class ArticleStore:
                     source TEXT NOT NULL DEFAULT '',
                     category TEXT NOT NULL DEFAULT '',
                     published TEXT NOT NULL DEFAULT '',
+                    published_at INTEGER NOT NULL DEFAULT 0,
                     fetched_at INTEGER NOT NULL DEFAULT 0
                 )
+            """)
+            # Existing installs need an additive migration; CREATE TABLE IF NOT EXISTS
+            # does not add columns to a database created by an older app version.
+            article_columns = {row["name"] for row in db.execute("PRAGMA table_info(articles)")}
+            if "published_at" not in article_columns:
+                db.execute("ALTER TABLE articles ADD COLUMN published_at INTEGER NOT NULL DEFAULT 0")
+            # Backfill publication timestamps for cached rows from older versions.
+            for row in db.execute(
+                "SELECT id, published FROM articles WHERE published_at = 0 AND published != ''"
+            ).fetchall():
+                timestamp = published_timestamp(row["published"])
+                if timestamp:
+                    db.execute(
+                        "UPDATE articles SET published_at = ? WHERE id = ?",
+                        (timestamp, row["id"]),
+                    )
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS article_categories (
+                    article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+                    category TEXT NOT NULL,
+                    PRIMARY KEY (article_id, category)
+                )
+            """)
+            # Migrate the legacy single-category field into the category index.
+            db.execute("""
+                INSERT OR IGNORE INTO article_categories (article_id, category)
+                SELECT id, category FROM articles WHERE category != ''
             """)
             db.execute("""
                 CREATE TABLE IF NOT EXISTS bookmarks (
@@ -245,20 +311,34 @@ class ArticleStore:
             """)
 
     def save_articles(self, articles: Iterable[dict]) -> None:
+        articles = list(articles)
         with self._connect() as db:
             db.executemany("""
                 INSERT INTO articles
-                    (id, title, url, summary, source, category, published, fetched_at)
+                    (id, title, url, summary, source, category, published, published_at, fetched_at)
                 VALUES
-                    (:id, :title, :url, :summary, :source, :category, :published, :fetched_at)
+                    (:id, :title, :url, :summary, :source, :category, :published, :published_at, :fetched_at)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title,
                     summary=excluded.summary,
                     source=excluded.source,
                     category=excluded.category,
                     published=excluded.published,
+                    published_at=excluded.published_at,
                     fetched_at=excluded.fetched_at
-            """, list(articles))
+            """, articles)
+            category_rows = []
+            for article in articles:
+                categories = article.get("categories") or [article.get("category", "")]
+                category_rows.extend(
+                    (article["id"], category)
+                    for category in categories
+                    if category
+                )
+            db.executemany(
+                "INSERT OR IGNORE INTO article_categories (article_id, category) VALUES (?, ?)",
+                category_rows,
+            )
 
     def list_articles(self, category: str = "For You", query: str = "", bookmarks_only: bool = False, limit: int = 150) -> list[dict]:
         sql = "SELECT a.* FROM articles a"
@@ -267,7 +347,10 @@ class ArticleStore:
             sql += " JOIN bookmarks b ON b.article_id = a.id"
         clauses = []
         if category not in {"For You", "Saved"}:
-            clauses.append("a.category = ?")
+            clauses.append(
+                "EXISTS (SELECT 1 FROM article_categories ac "
+                "WHERE ac.article_id = a.id AND ac.category = ?)"
+            )
             params.append(category)
         if query.strip():
             clauses.append("(a.title LIKE ? OR a.summary LIKE ? OR a.source LIKE ?)")
@@ -275,7 +358,8 @@ class ArticleStore:
             params.extend([term, term, term])
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY a.fetched_at DESC LIMIT ?"
+        order_by = "b.saved_at DESC" if bookmarks_only else "a.published_at DESC, a.fetched_at DESC"
+        sql += f" ORDER BY {order_by} LIMIT ?"
         params.append(max(1, min(int(limit), 500)))
         with self._connect() as db:
             return [dict(row) for row in db.execute(sql, params).fetchall()]

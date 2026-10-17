@@ -1,9 +1,10 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from news_core import ArticleStore, FEEDS, fetch_category, parse_feed
+from news_core import ArticleStore, FEEDS, article_sort_key, fetch_category, parse_feed, published_timestamp
 
 
 RSS = b"""<?xml version="1.0"?>
@@ -35,6 +36,19 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]["source"], "Test Publisher")
         self.assertEqual(items[0]["url"], "https://example.com/one")
         self.assertEqual(items[0]["summary"], "A short summary & update.")
+        self.assertGreater(items[0]["published_at"], 0)
+
+    def test_publication_timestamp_supports_rss_and_iso_dates(self):
+        self.assertEqual(
+            published_timestamp("Fri, 16 Oct 2026 10:00:00 GMT"),
+            published_timestamp("2026-10-16T10:00:00Z"),
+        )
+        self.assertEqual(published_timestamp("not a date"), 0)
+
+    def test_articles_sort_by_publication_time_not_fetch_order(self):
+        older = {"published": "2026-10-15T10:00:00Z", "published_at": 0, "fetched_at": 999}
+        newer = {"published": "2026-10-16T10:00:00Z", "published_at": 0, "fetched_at": 1}
+        self.assertGreater(article_sort_key(newer), article_sort_key(older))
 
     def test_parser_supports_atom_feeds(self):
         items = parse_feed(ATOM, "Technology", "Atom Publisher")
@@ -43,6 +57,7 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]["url"], "https://example.com/atom")
         self.assertEqual(items[0]["summary"], "Atom summary")
         self.assertEqual(items[0]["published"], "2026-10-16T10:00:00Z")
+        self.assertGreater(items[0]["published_at"], 0)
 
     def test_parser_uses_publisher_from_news_rss_source_element(self):
         content = b"""<rss version="2.0"><channel><item>
@@ -58,18 +73,78 @@ class FeedParsingTests(unittest.TestCase):
     def test_parser_returns_empty_for_malformed_xml(self):
         self.assertEqual(parse_feed(b"<rss><channel><item>", "World", "Broken"), [])
 
+    def test_store_migrates_legacy_schema_and_backfills_publication_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.sqlite3"
+            with sqlite3.connect(path) as db:
+                db.execute("""
+                    CREATE TABLE articles (
+                        id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT NOT NULL,
+                        summary TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '',
+                        category TEXT NOT NULL DEFAULT '', published TEXT NOT NULL DEFAULT '',
+                        fetched_at INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                db.execute("""
+                    INSERT INTO articles
+                    (id, title, url, summary, source, category, published, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, ("legacy", "Old headline", "https://example.com/legacy", "", "Test",
+                      "World", "Fri, 16 Oct 2026 10:00:00 GMT", 1))
+            store = ArticleStore(path)
+            row = store.list_articles()[0]
+            self.assertGreater(row["published_at"], 0)
+            self.assertEqual(row["id"], "legacy")
+            self.assertEqual(len(store.list_articles(category="World")), 1)
+
     def test_store_and_bookmark(self):
         with tempfile.TemporaryDirectory() as directory:
             store = ArticleStore(Path(directory) / "test.sqlite3")
             items = parse_feed(RSS, "World", "Test Publisher")
             store.save_articles(items)
             self.assertEqual(len(store.list_articles()), 1)
+            self.assertIn("published_at", store.list_articles()[0])
             article_id = items[0]["id"]
             self.assertTrue(store.toggle_bookmark(article_id))
             self.assertTrue(store.is_bookmarked(article_id))
             self.assertEqual(len(store.list_articles(bookmarks_only=True)), 1)
             self.assertFalse(store.toggle_bookmark(article_id))
             self.assertFalse(store.is_bookmarked(article_id))
+
+    def test_saved_articles_are_ordered_by_bookmark_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "saved.sqlite3")
+            first = parse_feed(RSS, "World", "Test Publisher")[0]
+            second = dict(first)
+            second.update(id="second-article", url="https://example.com/second", title="Second headline")
+            store.save_articles([first, second])
+            store.toggle_bookmark(first["id"])
+            store.toggle_bookmark(second["id"])
+            with sqlite3.connect(store.db_path) as db:
+                db.execute("UPDATE bookmarks SET saved_at = 100 WHERE article_id = ?", (first["id"],))
+                db.execute("UPDATE bookmarks SET saved_at = 200 WHERE article_id = ?", (second["id"],))
+            saved = store.list_articles(bookmarks_only=True)
+            self.assertEqual([row["id"] for row in saved], ["second-article", first["id"]])
+
+    def test_article_can_belong_to_multiple_categories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "categories.sqlite3")
+            article = parse_feed(RSS, "World", "Test Publisher")[0]
+            article["categories"] = ["World", "Technology"]
+            store.save_articles([article])
+            self.assertEqual(len(store.list_articles(category="World")), 1)
+            self.assertEqual(len(store.list_articles(category="Technology")), 1)
+
+    def test_oversized_feed_is_rejected(self):
+        response = Mock()
+        response.content = b"x" * (2 * 1024 * 1024 + 1)
+        response.raise_for_status.return_value = None
+        session = Mock()
+        session.get.return_value = response
+        articles, errors = fetch_category("World", session=session)
+        self.assertEqual(articles, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("ValueError", errors[0])
 
     def test_unknown_category_returns_error_without_network(self):
         session = Mock()
