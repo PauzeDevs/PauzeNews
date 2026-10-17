@@ -100,18 +100,17 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
     # Use the standard-library XML parser rather than feedparser. This keeps
     # Android builds self-contained and avoids python-for-android's legacy
     # feedparser recipe (which still uses the removed setuptools use_2to3 flag).
-    if isinstance(content, str):
-        encoded_size = len(content.encode("utf-8"))
-    else:
-        encoded_size = len(content)
-    if encoded_size > MAX_FEED_BYTES:
+    try:
+        encoded = content.encode("utf-8") if isinstance(content, str) else content
+    except (AttributeError, UnicodeError):
         return []
-    # RSS feeds do not need DTDs or custom entities; reject them before parsing.
-    probe = content[:MAX_FEED_BYTES] if isinstance(content, bytes) else content[:MAX_FEED_BYTES]
-    if re.search(br"<!\\s*(DOCTYPE|ENTITY)\\b", probe, re.IGNORECASE) if isinstance(probe, bytes) else re.search(r"<!\\s*(DOCTYPE|ENTITY)\\b", probe, re.IGNORECASE):
+    if len(encoded) > MAX_FEED_BYTES:
+        return []
+    # RSS/Atom do not require DTDs or custom entities.
+    if re.search(br"<!\s*(?:DOCTYPE|ENTITY)\b", encoded[:65536], re.IGNORECASE):
         return []
     try:
-        root = ET.fromstring(content)
+        root = ET.fromstring(encoded)
     except (ET.ParseError, TypeError, ValueError):
         return []
 
@@ -208,10 +207,10 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                 headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
                 stream=True,
             )
-            response.raise_for_status()
-            chunks = []
-            total = 0
             try:
+                response.raise_for_status()
+                chunks = []
+                total = 0
                 for chunk in response.iter_content(chunk_size=64 * 1024):
                     if not chunk:
                         continue
@@ -219,9 +218,9 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                     if total > MAX_FEED_BYTES:
                         raise ValueError(f"Feed response exceeds {MAX_FEED_BYTES} byte limit")
                     chunks.append(chunk)
+                content = b"".join(chunks)
             finally:
                 response.close()
-            content = b"".join(chunks)
         else:
             request = Request(
                 feed_url,
@@ -364,9 +363,17 @@ class ArticleStore:
                 "INSERT OR IGNORE INTO article_categories (article_id, category) VALUES (?, ?)",
                 category_rows,
             )
+            # Keep one month of unbookmarked history without deleting saved stories.
+            cutoff = int(time.time()) - 30 * 24 * 60 * 60
+            db.execute(
+                "DELETE FROM articles WHERE fetched_at > 0 AND fetched_at < ? "
+                "AND id NOT IN (SELECT article_id FROM bookmarks)",
+                (cutoff,),
+            )
 
     def list_articles(self, category: str = "For You", query: str = "", bookmarks_only: bool = False, limit: int = 150) -> list[dict]:
-        sql = "SELECT a.* FROM articles a"
+        sql = ("SELECT a.*, EXISTS(SELECT 1 FROM bookmarks bx "
+               "WHERE bx.article_id = a.id) AS is_bookmarked FROM articles a")
         params: list[object] = []
         if bookmarks_only:
             sql += " JOIN bookmarks b ON b.article_id = a.id"
@@ -378,8 +385,9 @@ class ArticleStore:
             )
             params.append(category)
         if query.strip():
-            clauses.append("(a.title LIKE ? OR a.summary LIKE ? OR a.source LIKE ?)")
-            term = f"%{query.strip()}%"
+            clauses.append("(a.title LIKE ? ESCAPE '\\' OR a.summary LIKE ? ESCAPE '\\' OR a.source LIKE ? ESCAPE '\\')")
+            term = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            term = f"%{term}%"
             params.extend([term, term, term])
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
