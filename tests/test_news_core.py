@@ -70,6 +70,20 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["source"], "Example Publisher")
 
+    def test_parser_rejects_oversized_and_dtd_xml(self):
+        self.assertEqual(parse_feed(b"x" * (2 * 1024 * 1024 + 1), "World", "Test"), [])
+        dtd = b'<!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel/></rss>'
+        self.assertEqual(parse_feed(dtd, "World", "Test"), [])
+
+    def test_parser_rejects_dtd_and_entity_declarations(self):
+        dtd = b'<!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel/></rss>'
+        spaced = b'<! DOCTYPE rss><rss><channel/></rss>'
+        self.assertEqual(parse_feed(dtd, "World", "Test"), [])
+        self.assertEqual(parse_feed(spaced, "World", "Test"), [])
+
+    def test_parser_rejects_oversized_input(self):
+        self.assertEqual(parse_feed(b"x" * (2 * 1024 * 1024 + 1), "World", "Test"), [])
+
     def test_parser_returns_empty_for_malformed_xml(self):
         self.assertEqual(parse_feed(b"<rss><channel><item>", "World", "Broken"), [])
 
@@ -137,14 +151,43 @@ class FeedParsingTests(unittest.TestCase):
 
     def test_oversized_feed_is_rejected(self):
         response = Mock()
-        response.content = b"x" * (2 * 1024 * 1024 + 1)
         response.raise_for_status.return_value = None
+        response.iter_content.return_value = [b"x" * (2 * 1024 * 1024), b"x"]
         session = Mock()
         session.get.return_value = response
         articles, errors = fetch_category("World", session=session)
         self.assertEqual(articles, [])
         self.assertEqual(len(errors), 1)
         self.assertIn("ValueError", errors[0])
+        response.close.assert_called_once()
+
+    def test_search_treats_like_wildcards_as_literal_characters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "search.sqlite3")
+            percent = parse_feed(RSS, "World", "Test Publisher")[0]
+            percent.update(id="percent", url="https://example.com/percent", title="100% accurate")
+            underscore = dict(percent, id="underscore", url="https://example.com/underscore", title="one_two")
+            ordinary = dict(percent, id="ordinary", url="https://example.com/ordinary", title="100 percent accurate")
+            store.save_articles([percent, underscore, ordinary])
+            self.assertEqual([x["id"] for x in store.list_articles(query="%")], ["percent"])
+            self.assertEqual([x["id"] for x in store.list_articles(query="_")], ["underscore"])
+
+    def test_cache_retention_preserves_bookmarks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "retention.sqlite3")
+            saved = parse_feed(RSS, "World", "Test Publisher")[0]
+            old = dict(saved, id="old", url="https://example.com/old", title="Old story")
+            store.save_articles([saved, old])
+            store.toggle_bookmark(old["id"])
+            cutoff = int(__import__("time").time()) - 31 * 24 * 60 * 60
+            with sqlite3.connect(store.db_path) as db:
+                db.execute("UPDATE articles SET fetched_at = ? WHERE id = ?", (cutoff, saved["id"]))
+                db.execute("UPDATE articles SET fetched_at = ? WHERE id = ?", (cutoff, old["id"]))
+            store.save_articles([])
+            ids = {x["id"] for x in store.list_articles()}
+            self.assertNotIn(saved["id"], ids)
+            self.assertIn(old["id"], ids)
+            self.assertEqual(len(store.list_articles(bookmarks_only=True)), 1)
 
     def test_unknown_category_returns_error_without_network(self):
         session = Mock()
@@ -155,7 +198,7 @@ class FeedParsingTests(unittest.TestCase):
 
     def test_fetch_category_sends_timeout_and_user_agent(self):
         response = Mock()
-        response.content = RSS
+        response.iter_content.return_value = [RSS]
         response.raise_for_status.return_value = None
         session = Mock()
         session.get.return_value = response
@@ -165,15 +208,17 @@ class FeedParsingTests(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(len(articles), 1)
         self.assertEqual(articles[0]["category"], "World")
+        response.close.assert_called_once()
         session.get.assert_called_once_with(
             FEEDS["World"][0][1],
             timeout=12,
             headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+            stream=True,
         )
 
     def test_one_failed_source_does_not_discard_other_sources(self):
         good = Mock()
-        good.content = RSS
+        good.iter_content.return_value = [RSS]
         good.raise_for_status.return_value = None
         bad = Mock()
         bad.raise_for_status.side_effect = RuntimeError("feed unavailable")

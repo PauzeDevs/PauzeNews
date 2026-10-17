@@ -301,7 +301,7 @@ class NewsCard(GlassSurface):
             valign="top",
         )
         self._body_labels.append(headline)
-        self._dynamic_labels[headline] = (dp(42 if featured else 36), dp(100))
+        self._dynamic_labels[headline] = (dp(42 if featured else 36), dp(240))
         headline.bind(texture_size=self._fit_dynamic_label)
         self.add_widget(headline)
 
@@ -311,11 +311,11 @@ class NewsCard(GlassSurface):
                 color=MUTED,
                 font_size="11sp",
                 height=dp(40),
-                text_size=(max(dp(160), self.width - dp(34)), None),
+                text_size=(max(dp(80), self.width - dp(34)), None),
                 valign="top",
             )
             self._body_labels.append(summary_label)
-            self._dynamic_labels[summary_label] = (dp(28), dp(84))
+            self._dynamic_labels[summary_label] = (dp(28), dp(160))
             summary_label.bind(texture_size=self._fit_dynamic_label)
             self.add_widget(summary_label)
 
@@ -364,7 +364,7 @@ class NewsCard(GlassSurface):
         label.height = max(minimum, min(maximum, texture_size[1] + dp(3)))
 
     def _sync_text_sizes(self, *_):
-        inner_width = max(dp(160), self.width - dp(34))
+        inner_width = max(dp(80), self.width - dp(34))
         for label in self._body_labels:
             if label in self._dynamic_labels:
                 label.text_size = (inner_width, None)
@@ -403,6 +403,8 @@ class PauzeNewsApp(App):
         self.show_saved = False
         self.loading = False
         self._refresh_generation = 0
+        self._refresh_lock = threading.Lock()
+        self._article_webview_client = None
         self.articles = []
         self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
@@ -621,11 +623,16 @@ class PauzeNewsApp(App):
         category = self.category if self.category != "Saved" else "For You"
 
         def worker():
-            try:
-                articles, errors = fetch_category(category)
-            except Exception as exc:
-                Logger.exception("PauzeNews: unexpected news-fetch failure")
-                articles, errors = [], [type(exc).__name__]
+            # Serialize fetches so rapid taps/category changes cannot spawn
+            # overlapping multi-feed thread pools. Obsolete queued work exits.
+            with self._refresh_lock:
+                if generation != self._refresh_generation:
+                    return
+                try:
+                    articles, errors = fetch_category(category)
+                except Exception as exc:
+                    Logger.exception("PauzeNews: unexpected news-fetch failure")
+                    articles, errors = [], [type(exc).__name__]
 
             def finish(_dt):
                 if generation != self._refresh_generation:
@@ -878,7 +885,34 @@ class PauzeNewsApp(App):
             settings.setJavaScriptCanOpenWindowsAutomatically(False)
             settings.setAllowFileAccess(False)
             settings.setAllowContentAccess(False)
-            webview.setWebViewClient(WebViewClient())
+            class ReaderWebViewClient(PythonJavaClass):
+                __javainterfaces__ = ["android/webkit/WebViewClient"]
+                __javacontext__ = "app"
+
+                def __init__(self, app):
+                    super().__init__()
+                    self.app = app
+
+                @java_method("(Landroid/webkit/WebView;Landroid/webkit/WebResourceRequest;Landroid/webkit/WebResourceError;)V")
+                def onReceivedError(self, _view, request, _error):
+                    try:
+                        if request.isForMainFrame():
+                            self.app._article_page_failed("Article could not be loaded due to a network error.")
+                    except Exception:
+                        Logger.exception("PauzeNews: WebView network-error callback failed")
+
+                @java_method("(Landroid/webkit/WebView;Landroid/webkit/WebResourceRequest;Landroid/webkit/WebResourceResponse;)V")
+                def onReceivedHttpError(self, _view, request, response):
+                    try:
+                        if request.isForMainFrame() and response.getStatusCode() >= 400:
+                            self.app._article_page_failed(
+                                f"Publisher returned HTTP {response.getStatusCode()}."
+                            )
+                    except Exception:
+                        Logger.exception("PauzeNews: WebView HTTP-error callback failed")
+
+            self._article_webview_client = ReaderWebViewClient(self)
+            webview.setWebViewClient(self._article_webview_client)
             webview.setWebChromeClient(WebChromeClient())
             webview.setBackgroundColor(Color.WHITE)
             reader.addView(webview, LinearLayout.LayoutParams(-1, 0, 1.0))
@@ -1002,6 +1036,7 @@ class PauzeNewsApp(App):
             self._article_key_listener = None
             self._article_dialog_key_listener = None
             self._article_external_listener = None
+            self._article_webview_client = None
 
             # If native WebView setup is unavailable on this device, do not
             # strand the user at a dead READ button: attempt the system browser.
@@ -1024,6 +1059,13 @@ class PauzeNewsApp(App):
                 0,
             )
 
+    def _article_page_failed(self, message):
+        """Report main-frame navigation failures while keeping OPEN ↗ available."""
+        def update_status(_dt):
+            if self._article_overlay is not None and hasattr(self, "status"):
+                self.status.text = f"{message} Use OPEN ↗ to try your browser."
+        Clock.schedule_once(update_status, 0)
+
     @run_on_ui_thread
     def close_article(self):
         """Close the embedded reader and return to the headline list."""
@@ -1039,6 +1081,7 @@ class PauzeNewsApp(App):
         self._article_key_listener = None
         self._article_dialog_key_listener = None
         self._article_external_listener = None
+        self._article_webview_client = None
 
         try:
             if dialog is not None:
