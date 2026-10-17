@@ -1,19 +1,10 @@
 name: Android APK
 
+# APK packaging is intentionally opt-in: source-code pushes and PRs
+# run lightweight Python checks only. A version tag is the release signal.
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - "buildozer.spec"
-      - "requirements.txt"
-      - "**.py"
-      - "**.kv"
-      - "*.png"
-      - "*.jpg"
-      - "*.jpeg"
-      - ".github/workflows/android-apk.yml"
     tags:
       - "v*"
 
@@ -100,58 +91,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: PauzeNews ${{ github.ref_name }}
-          generate_release_notes: true
-          body: |
-            # PauzeNews ${{ github.ref_name }}
-
-            ## Highlights
-            - Premium charcoal interface with warm metallic-gold accents and rounded topic pills.
-            - Compact, full-width editorial cards with clean READ and SAVE actions.
-            - Publisher articles open inside PauzeNews instead of jumping to an external browser.
-            - In-reader navigation supports both publisher-page history and Android Back.
-            - Android package version is aligned with the release.
-
-            ## Install
-            Download the APK attached to this release and install it on Android. If Android rejects an in-place update because the signing certificate differs from an older CI build, back up any important local data before uninstalling the older copy.
-
-            ## Links
-            - PauzeX Developments: https://pauzex.devs.surf/
-            - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
-          overwrite_files: true
-          fail_on_unmatched_files: true
-          files: bin/*.apk
-
-      - name: Publish stable v1.0.0
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[stable-release]')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0.0
-          name: PauzeNews v1.0.0 — Stable Release
-          target_commitish: ${{ github.sha }}
-          prerelease: false
           make_latest: true
           overwrite_files: true
           fail_on_unmatched_files: true
           files: bin/*.apk
           body: |
-            # PauzeNews v1.0.0 — Stable Release
+            # PauzeNews ${{ github.ref_name }}
 
-            The first stable release of PauzeNews, built from the latest main branch.
+            A quality-focused update to PauzeNews, with a premium charcoal-and-gold editorial identity and in-app article reading.
 
             ## Highlights
-            - Premium charcoal interface with warm metallic-gold accents and rounded topic pills.
-            - Compact full-width editorial cards with clear READ and SAVE actions.
-            - Improved startup rendering and safer loading/error handling.
-            - Staged initial story rendering with a Load More option.
-            - Reduced concurrent feed requests for a more controlled startup experience.
+            - Premium near-black and charcoal surfaces with warm metallic-gold accents.
+            - Rounded topic pills and action controls without unsupported icon glyphs.
+            - Compact, full-width story cards with a clearer editorial hierarchy.
+            - Publisher pages open inside PauzeNews with page-history and Android Back navigation.
+            - Android package version aligned to the source version in this tag.
 
             ## Installation
-            1. Download the APK attached to this release.
-            2. Open the downloaded APK on your Android device and follow the installation prompts.
-            3. If Android blocks installation, allow your browser or file manager to install unknown apps, then retry.
+            Download the APK attached to this release and install it on Android. If Android rejects an in-place update because the signing certificate differs from an older CI build, back up important local data before uninstalling the older copy.
 
             ## Links
             - PauzeX Developments: https://pauzex.devs.surf/
-            - Source code: https://github.com/PauzeDevs/PauzeNews
+            - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
 
-            **Build note:** CI verifies that an APK is produced; device-specific behavior may vary by Android version.
+            **Verification note:** The APK is attached only after the Android build and APK output check succeed. Physical-device verification is recommended for installation and publisher-specific WebView behavior.
