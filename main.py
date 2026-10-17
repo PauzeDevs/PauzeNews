@@ -399,6 +399,7 @@ class PauzeNewsApp(App):
         self._article_key_listener = None
         self._article_dialog_key_listener = None
         self._article_external_listener = None
+        self._article_webview_client = None
         self.category = "For You"
         self.show_saved = False
         self.loading = False
@@ -826,6 +827,9 @@ class PauzeNewsApp(App):
             WebView = autoclass("android.webkit.WebView")
             WebViewClient = autoclass("android.webkit.WebViewClient")
             WebChromeClient = autoclass("android.webkit.WebChromeClient")
+            WebResourceRequest = autoclass("android.webkit.WebResourceRequest")
+            WebResourceError = autoclass("android.webkit.WebResourceError")
+            WebResourceResponse = autoclass("android.webkit.WebResourceResponse")
 
             density = float(activity.getResources().getDisplayMetrics().density)
 
@@ -878,7 +882,34 @@ class PauzeNewsApp(App):
             settings.setJavaScriptCanOpenWindowsAutomatically(False)
             settings.setAllowFileAccess(False)
             settings.setAllowContentAccess(False)
-            webview.setWebViewClient(WebViewClient())
+            class ReaderWebViewClient(PythonJavaClass):
+                __javainterfaces__ = ["android/webkit/WebViewClient"]
+                __javacontext__ = "app"
+
+                def __init__(self, app):
+                    super().__init__()
+                    self.app = app
+
+                @java_method("(Landroid/webkit/WebView;Landroid/webkit/WebResourceRequest;Landroid/webkit/WebResourceError;)V")
+                def onReceivedError(self, _view, request, error):
+                    try:
+                        if request.isForMainFrame():
+                            self.app._article_page_failed("Network error loading article")
+                    except Exception:
+                        Logger.exception("PauzeNews: WebView network-error callback failed")
+
+                @java_method("(Landroid/webkit/WebView;Landroid/webkit/WebResourceRequest;Landroid/webkit/WebResourceResponse;)V")
+                def onReceivedHttpError(self, _view, request, response):
+                    try:
+                        if request.isForMainFrame() and response.getStatusCode() >= 400:
+                            self.app._article_page_failed(
+                                f"Publisher returned HTTP {response.getStatusCode()}. Use OPEN ↗ to try your browser."
+                            )
+                    except Exception:
+                        Logger.exception("PauzeNews: WebView HTTP-error callback failed")
+
+            self._article_webview_client = ReaderWebViewClient(self)
+            webview.setWebViewClient(self._article_webview_client)
             webview.setWebChromeClient(WebChromeClient())
             webview.setBackgroundColor(Color.WHITE)
             reader.addView(webview, LinearLayout.LayoutParams(-1, 0, 1.0))
@@ -1002,6 +1033,7 @@ class PauzeNewsApp(App):
             self._article_key_listener = None
             self._article_dialog_key_listener = None
             self._article_external_listener = None
+            self._article_webview_client = None
 
             # If native WebView setup is unavailable on this device, do not
             # strand the user at a dead READ button: attempt the system browser.
@@ -1024,6 +1056,13 @@ class PauzeNewsApp(App):
                 0,
             )
 
+    def _article_page_failed(self, message):
+        """Surface main-frame WebView failures without hiding the external-browser action."""
+        def update_status(_dt):
+            if self._article_overlay is not None:
+                self.status.text = f"{message} · Tap OPEN ↗ in the reader toolbar."
+        Clock.schedule_once(update_status, 0)
+
     @run_on_ui_thread
     def close_article(self):
         """Close the embedded reader and return to the headline list."""
@@ -1039,6 +1078,7 @@ class PauzeNewsApp(App):
         self._article_key_listener = None
         self._article_dialog_key_listener = None
         self._article_external_listener = None
+        self._article_webview_client = None
 
         try:
             if dialog is not None:
