@@ -36,7 +36,7 @@ PauzeNews is a Python-first news reader built with **Kivy**. It brings topic-bas
 
 The interface pairs near-black and charcoal surfaces with a restrained metallic-gold accent, high-contrast typography, rounded topic pills, and compact full-width story cards. Its visual direction takes cues from Apple Developer's clarity and hierarchy without copying Apple's branding. The Android layout reserves safe space around system bars and renders a small first batch to keep startup lightweight.
 
-> **Release verification:** Official APKs are provided through GitHub Releases. Every push to `main` builds and checks an APK; commits marked `[release]` publish a versioned GitHub Release. Physical-device installation and reader behavior should also be verified.
+> **Release verification:** Official APKs are provided through GitHub Releases. Every push to `main` builds and checks an APK; commits marked `[release]` publish stable releases, and commits marked `[pre-release]` publish versioned pre-releases with the built APK. Physical-device installation and reader behavior should also be verified.
 
 ## Features
 
