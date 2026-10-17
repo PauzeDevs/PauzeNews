@@ -1,11 +1,11 @@
 name: Android APK
 
-# APK builds and releases happen only when a version tag is pushed.
-# Normal source-code pushes and pull requests run Python checks only.
+# Normal code changes run lightweight Python checks only.
+# Android packaging runs only for an explicitly marked release commit on main.
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -68,17 +68,20 @@ jobs:
           fi
           ls -lh "$apk"
 
-      - name: Publish versioned release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish stable v1.0.1 release
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
-          name: PauzeNews ${{ github.ref_name }}
+          tag_name: v1.0.1
+          name: PauzeNews v1.0.1 — Gold UI & In-App Reader
+          target_commitish: ${{ github.sha }}
+          prerelease: false
           make_latest: true
           overwrite_files: true
           fail_on_unmatched_files: true
           files: bin/*.apk
           body: |
-            # PauzeNews ${{ github.ref_name }}
+            # PauzeNews v1.0.1 — Gold UI & In-App Reader
 
             A quality-focused update to PauzeNews, with a premium charcoal-and-gold editorial identity and in-app article reading.
 
@@ -94,6 +97,7 @@ jobs:
 
             ## Links
             - PauzeX Developments: https://pauzex.devs.surf/
+            - Developer profile: https://github.com/PauzeDevs
             - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
 
             **Verification note:** The APK is attached only after the Android build and APK output check succeed. Physical-device verification is recommended for installation and publisher-specific WebView behavior.
