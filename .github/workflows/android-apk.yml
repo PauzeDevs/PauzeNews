@@ -72,7 +72,7 @@ jobs:
               echo "::error::Could not verify remote tags; refusing to publish without a successful tag check."
               exit 1
             fi
-            if grep -Fq "refs/tags/$tag" <<< "$remote_tags"; then
+            if awk -v tag="refs/tags/$tag" '$2 == tag || $2 == tag "^{}" { found=1 } END { exit !found }' <<< "$remote_tags"; then
               echo "::error::Release tag $tag already exists. Use a new version; existing tags are never overwritten."
               exit 1
             fi
