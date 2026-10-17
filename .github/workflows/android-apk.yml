@@ -96,6 +96,14 @@ jobs:
           set +o pipefail
           yes | buildozer -v android debug
 
+      - name: Upload APK as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pauzenews-apk-${{ github.sha }}
+          path: bin/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Verify APK output
         id: apk
         shell: bash

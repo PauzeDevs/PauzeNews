@@ -338,7 +338,13 @@ class NewsCard(GlassSurface):
         read.width = dp(116)
         read.bind(on_release=lambda *_: self.app.open_article(article))
 
-        saved = self.app.store.is_bookmarked(article["id"])
+        # list_articles() includes bookmark state, avoiding a separate SQLite
+        # connection for every card during normal feed rendering.
+        saved = (
+            bool(article["is_bookmarked"])
+            if "is_bookmarked" in article
+            else self.app.store.is_bookmarked(article["id"])
+        )
         bookmark = _action_button(
             "SAVED" if saved else "SAVE",
             background=ACCENT_DARK if saved else PANEL,
@@ -613,6 +619,12 @@ class PauzeNewsApp(App):
             self.refresh_news()
 
     def refresh_news(self):
+        # Run retention before the fetch so stale cache is cleaned even when
+        # every upstream feed is offline; do not prune during schema migration.
+        try:
+            self.store.prune_cache()
+        except Exception:
+            Logger.exception("PauzeNews: cache retention cleanup failed")
         # Each request gets a generation token. Only the newest request may
         # update the cache/UI, preventing stale category results from winning.
         self._refresh_generation += 1

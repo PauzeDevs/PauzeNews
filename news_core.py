@@ -107,7 +107,7 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
     if len(encoded) > MAX_FEED_BYTES:
         return []
     # RSS/Atom do not require DTDs or custom entities.
-    if re.search(br"<!\s*(?:DOCTYPE|ENTITY)\b", encoded[:65536], re.IGNORECASE):
+    if re.search(br"<!\s*(?:DOCTYPE|ENTITY)\b", encoded, re.IGNORECASE):
         return []
     try:
         root = ET.fromstring(encoded)
@@ -334,6 +334,22 @@ class ArticleStore:
                 )
             """)
 
+
+    @staticmethod
+    def _prune_cache(db) -> None:
+        """Delete expired unbookmarked cache rows; bookmarks are retained."""
+        cutoff = int(time.time()) - 30 * 24 * 60 * 60
+        db.execute(
+            "DELETE FROM articles WHERE fetched_at > 0 AND fetched_at < ? "
+            "AND id NOT IN (SELECT article_id FROM bookmarks)",
+            (cutoff,),
+        )
+
+    def prune_cache(self) -> None:
+        """Run retention independently of whether a feed refresh succeeded."""
+        with self._connect() as db:
+            self._prune_cache(db)
+
     def save_articles(self, articles: Iterable[dict]) -> None:
         articles = list(articles)
         with self._connect() as db:
@@ -359,22 +375,23 @@ class ArticleStore:
                     for category in categories
                     if category
                 )
+            # Category membership is intentionally cumulative: a story may be
+            # discovered in more than one feed, and a single category refresh
+            # cannot safely infer that its other memberships should be removed.
             db.executemany(
                 "INSERT OR IGNORE INTO article_categories (article_id, category) VALUES (?, ?)",
                 category_rows,
             )
             # Keep one month of unbookmarked history without deleting saved stories.
-            cutoff = int(time.time()) - 30 * 24 * 60 * 60
-            db.execute(
-                "DELETE FROM articles WHERE fetched_at > 0 AND fetched_at < ? "
-                "AND id NOT IN (SELECT article_id FROM bookmarks)",
-                (cutoff,),
-            )
+            self._prune_cache(db)
 
     def list_articles(self, category: str = "For You", query: str = "", bookmarks_only: bool = False, limit: int = 150) -> list[dict]:
         sql = ("SELECT a.*, EXISTS(SELECT 1 FROM bookmarks bx "
                "WHERE bx.article_id = a.id) AS is_bookmarked FROM articles a")
         params: list[object] = []
+        # Treat the Saved pseudo-category as bookmarks even when callers omit
+        # bookmarks_only=True; this keeps the public query API unsurprising.
+        bookmarks_only = bookmarks_only or category == "Saved"
         if bookmarks_only:
             sql += " JOIN bookmarks b ON b.article_id = a.id"
         clauses = []
