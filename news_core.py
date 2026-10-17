@@ -333,7 +333,7 @@ class ArticleStore:
                     saved_at INTEGER NOT NULL
                 )
             """)
-            self._prune_cache(db)
+
 
     @staticmethod
     def _prune_cache(db) -> None:
