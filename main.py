@@ -4,6 +4,8 @@ from __future__ import annotations
 import threading
 import webbrowser
 from pathlib import Path
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
 
 from kivy.utils import platform
@@ -46,6 +48,25 @@ def _shorten(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 1].rstrip() + "…"
+
+
+def _published_label(value: str) -> str:
+    """Make feed timestamps compact and consistent across publishers."""
+    if not value:
+        return "LATEST"
+    try:
+        published = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            published = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError, OverflowError):
+            return _shorten(value.upper(), 16)
+    try:
+        if published.tzinfo is not None:
+            published = published.astimezone()
+        return published.strftime("%d %b · %H:%M").upper()
+    except (ValueError, OverflowError):
+        return _shorten(value.upper(), 16)
 
 
 class GlassSurface(BoxLayout):
@@ -187,40 +208,65 @@ class TopicButton(Button):
 
 
 class NewsCard(GlassSurface):
-    """Compact editorial story card with a readable hierarchy and simple actions."""
+    """Editorial story card with clear source, time, headline, and actions."""
 
-    def __init__(self, article, app, **kwargs):
+    def __init__(self, article, app, featured=False, **kwargs):
         summary = article.get("summary", "")
+        self.featured = featured
         super().__init__(
             orientation="vertical",
             spacing=dp(4),
             padding=[dp(12), dp(9), dp(12), dp(9)],
-            surface_color=PANEL,
-            radius=dp(16),
+            surface_color=PANEL_RAISED if featured else PANEL,
+            radius=dp(17 if featured else 15),
             size_hint_y=None,
-            height=dp(152 if summary else 124),
+            height=dp(170 if featured and summary else 154 if summary else 126),
             **kwargs,
         )
         self.article = article
         self.app = app
 
-        published = _shorten(article.get("published", ""), 22)
-        category = article.get("category", "News")
-        source = _shorten(article.get("source", "Source"), 25)
-        meta = "  ·  ".join(part for part in (category, source, published) if part)
-        self.add_widget(_text_label(
-            _shorten(meta, 72),
+        if featured:
+            self.add_widget(_text_label(
+                "THE LEAD STORY",
+                color=ACCENT,
+                font_size="9sp",
+                bold=True,
+                height=dp(13),
+                text_size=(max(dp(180), Window.width - dp(56)), dp(13)),
+            ))
+
+        meta = BoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            height=dp(16),
+            spacing=dp(6),
+        )
+        category = _shorten(article.get("category", "News").upper(), 15)
+        source = _shorten(article.get("source", "Source"), 24)
+        meta.add_widget(_text_label(
+            f"{category}  ·  {source}",
             color=ACCENT,
-            font_size="10sp",
+            font_size="9sp",
             bold=True,
             height=dp(16),
-            text_size=(max(dp(180), Window.width - dp(56)), dp(16)),
+            text_size=(max(dp(150), Window.width - dp(165)), dp(16)),
         ))
+        meta.add_widget(_text_label(
+            _published_label(article.get("published", "")),
+            color=MUTED,
+            font_size="8sp",
+            bold=True,
+            height=dp(16),
+            text_size=(dp(82), dp(16)),
+            halign="right",
+        ))
+        self.add_widget(meta)
 
         self.add_widget(_text_label(
-            _shorten(article.get("title", "Untitled"), 108),
+            _shorten(article.get("title", "Untitled"), 120),
             color=TEXT,
-            font_size="15sp",
+            font_size="15sp" if featured else "14sp",
             bold=True,
             height=dp(42),
             text_size=(max(dp(180), Window.width - dp(56)), dp(42)),
@@ -229,11 +275,11 @@ class NewsCard(GlassSurface):
 
         if summary:
             self.add_widget(_text_label(
-                _shorten(summary, 142),
+                _shorten(summary, 150),
                 color=MUTED,
                 font_size="11sp",
-                height=dp(32),
-                text_size=(max(dp(180), Window.width - dp(56)), dp(32)),
+                height=dp(30),
+                text_size=(max(dp(180), Window.width - dp(56)), dp(30)),
                 valign="top",
             ))
 
@@ -246,32 +292,31 @@ class NewsCard(GlassSurface):
         actions.add_widget(Widget())
 
         read = _action_button(
-            "READ",
+            "READ STORY",
             background=ACCENT,
             color=BG,
-            font_size="10sp",
+            font_size="9sp",
             height=dp(30),
         )
         read.size_hint_x = None
-        read.width = dp(82)
+        read.width = dp(92)
         read.bind(on_release=lambda *_: self.app.open_article(article))
 
         saved = self.app.store.is_bookmarked(article["id"])
         bookmark = _action_button(
             "SAVED" if saved else "SAVE",
-            background=ACCENT_DARK if saved else PANEL_RAISED,
+            background=ACCENT_DARK if saved else PANEL,
             color=ACCENT if saved else MUTED,
-            font_size="10sp",
+            font_size="9sp",
             height=dp(30),
         )
         bookmark.size_hint_x = None
-        bookmark.width = dp(72)
+        bookmark.width = dp(68)
         bookmark.bind(on_release=lambda *_: self.app.toggle_bookmark(article))
 
         actions.add_widget(read)
         actions.add_widget(bookmark)
         self.add_widget(actions)
-
 
 class PauzeNewsApp(App):
     title = "PauzeNews"
@@ -282,6 +327,7 @@ class PauzeNewsApp(App):
         Window.bind(on_keyboard=self._handle_keyboard)
         self._article_overlay = None
         self._article_content = None
+        self._article_dialog = None
         self._article_webview = None
         self._article_back_listener = None
         self._article_key_listener = None
@@ -560,8 +606,8 @@ class PauzeNewsApp(App):
                 self.card_list.add_widget(retry)
             return
 
-        for article in articles:
-            self.card_list.add_widget(NewsCard(article, self))
+        for index, article in enumerate(articles):
+            self.card_list.add_widget(NewsCard(article, self, featured=(index == 0)))
 
         if has_more:
             more = _action_button(
@@ -597,7 +643,6 @@ class PauzeNewsApp(App):
                 self.status.text = "Could not open this article."
             return
 
-        self.status.text = "Opening article in PauzeNews…"
         self._open_article_reader(url, title)
 
     def _handle_keyboard(self, _window, key, *_args):
@@ -625,21 +670,25 @@ class PauzeNewsApp(App):
         content = None
         reader = None
         webview = None
+        dialog = None
+        activity = None
         try:
             from jnius import PythonJavaClass, autoclass, java_method
 
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
-            content = activity.findViewById(16908290)  # android.R.id.content
-            if content is None:
-                raise RuntimeError("Android activity content view is unavailable")
-
-            # Remove any previously opened reader before creating another one.
-            if self._article_overlay is not None and self._article_content is not None:
-                self._article_content.removeView(self._article_overlay)
+            # A Dialog owns a window above Kivy's rendering surface. Adding
+            # a WebView directly to android.R.id.content can fail on some
+            # Kivy/Android combinations because that view tree is not a normal
+            # activity layout.
+            if self._article_dialog is not None:
+                try:
+                    self._article_dialog.dismiss()
+                except Exception:
+                    Logger.exception("PauzeNews: could not dismiss previous reader")
 
             Color = autoclass("android.graphics.Color")
             Gravity = autoclass("android.view.Gravity")
-            FrameLayout = autoclass("android.widget.FrameLayout")
+            Dialog = autoclass("android.app.Dialog")
             LinearLayout = autoclass("android.widget.LinearLayout")
             TextView = autoclass("android.widget.TextView")
             WebView = autoclass("android.webkit.WebView")
@@ -736,17 +785,28 @@ class PauzeNewsApp(App):
             webview.setFocusableInTouchMode(True)
             webview.setOnKeyListener(self._article_key_listener)
 
-            params = FrameLayout.LayoutParams(-1, -1)
-            content.addView(reader, params)
+            dialog = Dialog(activity)
+            dialog.setCancelable(True)
+            dialog.setCanceledOnTouchOutside(False)
+            dialog.setContentView(reader)
+            dialog.show()
+            window = dialog.getWindow()
+            if window is not None:
+                window.setLayout(-1, -1)
+
             self._article_overlay = reader
-            self._article_content = content
+            self._article_content = None
+            self._article_dialog = dialog
             self._article_webview = webview
             webview.requestFocus()
             webview.loadUrl(url)
-        except Exception:
+            self.status.text = "Reader opened · Use Back to return to headlines"
+        except Exception as exc:
             Logger.exception("PauzeNews: failed to open the in-app article reader")
             try:
-                if content is not None and reader is not None:
+                if dialog is not None:
+                    dialog.dismiss()
+                elif content is not None and reader is not None:
                     content.removeView(reader)
                 if webview is not None:
                     webview.stopLoading()
@@ -755,11 +815,29 @@ class PauzeNewsApp(App):
                 Logger.exception("PauzeNews: reader cleanup failed after an open error")
             self._article_overlay = None
             self._article_content = None
+            self._article_dialog = None
             self._article_webview = None
             self._article_back_listener = None
             self._article_key_listener = None
+
+            # If native WebView setup is unavailable on this device, do not
+            # strand the user at a dead READ button: attempt the system browser.
+            opened_external = False
+            if activity is not None:
+                try:
+                    Intent = autoclass("android.content.Intent")
+                    Uri = autoclass("android.net.Uri")
+                    intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                    activity.startActivity(intent)
+                    opened_external = True
+                except Exception:
+                    Logger.exception("PauzeNews: browser fallback also failed")
+            if opened_external:
+                message = f"Embedded reader unavailable ({type(exc).__name__}); opened your browser."
+            else:
+                message = f"Could not open reader ({type(exc).__name__}). Check the link and retry."
             Clock.schedule_once(
-                lambda _dt: setattr(self.status, "text", "Couldn't open the in-app reader. Please try again."),
+                lambda _dt, msg=message: setattr(self.status, "text", msg),
                 0,
             )
 
@@ -768,15 +846,19 @@ class PauzeNewsApp(App):
         """Close the embedded reader and return to the headline list."""
         overlay = self._article_overlay
         content = self._article_content
+        dialog = self._article_dialog
         webview = self._article_webview
         self._article_overlay = None
         self._article_content = None
+        self._article_dialog = None
         self._article_webview = None
         self._article_back_listener = None
         self._article_key_listener = None
 
         try:
-            if content is not None and overlay is not None:
+            if dialog is not None:
+                dialog.dismiss()
+            elif content is not None and overlay is not None:
                 content.removeView(overlay)
             if webview is not None:
                 webview.stopLoading()
