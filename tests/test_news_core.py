@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from news_core import ArticleStore, FEEDS, fetch_category, parse_feed
+from news_core import ArticleStore, FEEDS, article_sort_key, fetch_category, parse_feed, published_timestamp
 
 
 RSS = b"""<?xml version="1.0"?>
@@ -35,6 +35,19 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]["source"], "Test Publisher")
         self.assertEqual(items[0]["url"], "https://example.com/one")
         self.assertEqual(items[0]["summary"], "A short summary & update.")
+        self.assertGreater(items[0]["published_at"], 0)
+
+    def test_publication_timestamp_supports_rss_and_iso_dates(self):
+        self.assertEqual(
+            published_timestamp("Fri, 16 Oct 2026 10:00:00 GMT"),
+            published_timestamp("2026-10-16T10:00:00Z"),
+        )
+        self.assertEqual(published_timestamp("not a date"), 0)
+
+    def test_articles_sort_by_publication_time_not_fetch_order(self):
+        older = {"published": "2026-10-15T10:00:00Z", "published_at": 0, "fetched_at": 999}
+        newer = {"published": "2026-10-16T10:00:00Z", "published_at": 0, "fetched_at": 1}
+        self.assertGreater(article_sort_key(newer), article_sort_key(older))
 
     def test_parser_supports_atom_feeds(self):
         items = parse_feed(ATOM, "Technology", "Atom Publisher")
@@ -43,6 +56,7 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]["url"], "https://example.com/atom")
         self.assertEqual(items[0]["summary"], "Atom summary")
         self.assertEqual(items[0]["published"], "2026-10-16T10:00:00Z")
+        self.assertGreater(items[0]["published_at"], 0)
 
     def test_parser_uses_publisher_from_news_rss_source_element(self):
         content = b"""<rss version="2.0"><channel><item>
@@ -64,6 +78,7 @@ class FeedParsingTests(unittest.TestCase):
             items = parse_feed(RSS, "World", "Test Publisher")
             store.save_articles(items)
             self.assertEqual(len(store.list_articles()), 1)
+            self.assertIn("published_at", store.list_articles()[0])
             article_id = items[0]["id"]
             self.assertTrue(store.toggle_bookmark(article_id))
             self.assertTrue(store.is_bookmarked(article_id))
