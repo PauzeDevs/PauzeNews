@@ -36,7 +36,7 @@ PauzeNews is a Python-first news reader built with **Kivy**. It brings topic-bas
 
 The interface pairs near-black and charcoal surfaces with a restrained metallic-gold accent, high-contrast typography, rounded topic pills, and compact full-width story cards. Its visual direction takes cues from Apple Developer's clarity and hierarchy without copying Apple's branding. The Android layout reserves safe space around system bars and renders a small first batch to keep startup lightweight.
 
-> **Release verification:** Official APKs are provided through GitHub Releases. Every push to `main` builds and checks an APK; commits marked `[release]` publish stable releases, and commits marked `[pre-release]` publish versioned pre-releases with the built APK. Physical-device installation and reader behavior should also be verified.
+> **Release verification:** Every push to `main` builds and checks an APK. A release is published only when a commit message contains an explicit version marker: `[release 1.0.4]` for a stable release or `[pre-release 1.0.4-rc.1]` for a preview. Existing tags are never reused. The workflow aligns the Android version name with the requested version and attaches the APK only after build output verification. CI success is not a substitute for physical-device installation and reader testing.
 
 ## Features
 
@@ -108,7 +108,7 @@ These badges are linked to GitHub Actions. Open them to see workflow results and
 | [Android APK](https://github.com/PauzeDevs/PauzeNews/actions/workflows/android-apk.yml) | Build Android APKs; version-tagged builds attach APKs to GitHub Releases |
 | [All workflow runs](https://github.com/PauzeDevs/PauzeNews/actions) | Inspect recent runs and logs |
 
-Badges update automatically when GitHub Actions reports a new status. They show workflow status, not a guarantee that every device or network will work.
+Badges update automatically when GitHub Actions reports a new status. They show workflow status, not a guarantee that every device or network will work. Release commit messages must include a new, unused version marker as documented above; never reuse an existing release version or tag.
 
 ## Run the tests
 
