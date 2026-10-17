@@ -529,9 +529,21 @@ class PauzeNewsApp(App):
     def _handle_keyboard(self, _window, key, *_args):
         # Android Back/Escape returns from the article view instead of exiting.
         if key in (27, 1001) and self._article_overlay is not None:
-            self.close_article()
+            self._reader_back()
             return True
         return False
+
+    @run_on_ui_thread
+    def _reader_back(self):
+        """Navigate back within the publisher page before closing the reader."""
+        webview = self._article_webview
+        try:
+            if webview is not None and webview.canGoBack():
+                webview.goBack()
+                return
+        except Exception:
+            Logger.exception("PauzeNews: could not navigate back in the article")
+        self.close_article()
 
     @run_on_ui_thread
     def _open_article_reader(self, url, title):
@@ -623,7 +635,7 @@ class PauzeNewsApp(App):
 
                 @java_method("(Landroid/view/View;)V")
                 def onClick(self, _view):
-                    self.app.close_article()
+                    self.app._reader_back()
 
             self._article_back_listener = BackClickListener(self)
             back.setOnClickListener(self._article_back_listener)
