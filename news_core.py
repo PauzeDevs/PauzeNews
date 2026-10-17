@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import html
 import sqlite3
 import ssl
@@ -99,6 +100,16 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
     # Use the standard-library XML parser rather than feedparser. This keeps
     # Android builds self-contained and avoids python-for-android's legacy
     # feedparser recipe (which still uses the removed setuptools use_2to3 flag).
+    if isinstance(content, str):
+        encoded_size = len(content.encode("utf-8"))
+    else:
+        encoded_size = len(content)
+    if encoded_size > MAX_FEED_BYTES:
+        return []
+    # RSS feeds do not need DTDs or custom entities; reject them before parsing.
+    probe = content[:MAX_FEED_BYTES] if isinstance(content, bytes) else content[:MAX_FEED_BYTES]
+    if re.search(br"<!\\s*(DOCTYPE|ENTITY)\\b", probe, re.IGNORECASE) if isinstance(probe, bytes) else re.search(r"<!\\s*(DOCTYPE|ENTITY)\\b", probe, re.IGNORECASE):
+        return []
     try:
         root = ET.fromstring(content)
     except (ET.ParseError, TypeError, ValueError):
@@ -190,13 +201,27 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
     def fetch_one(source):
         selected_category, source_name, feed_url = source
         if session is not None:
+            # Stream bounded chunks: checking response.content after download is too late.
             response = session.get(
                 feed_url,
                 timeout=REQUEST_TIMEOUT,
                 headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+                stream=True,
             )
             response.raise_for_status()
-            content = response.content
+            chunks = []
+            total = 0
+            try:
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    total += len(chunk)
+                    if total > MAX_FEED_BYTES:
+                        raise ValueError(f"Feed response exceeds {MAX_FEED_BYTES} byte limit")
+                    chunks.append(chunk)
+            finally:
+                response.close()
+            content = b"".join(chunks)
         else:
             request = Request(
                 feed_url,
