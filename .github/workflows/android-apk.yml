@@ -68,7 +68,11 @@ jobs:
 
           if [[ -n "$release_type" ]]; then
             tag="v$version"
-            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            if ! remote_tags="$(git ls-remote --tags origin)"; then
+              echo "::error::Could not verify remote tags; refusing to publish without a successful tag check."
+              exit 1
+            fi
+            if grep -Fq "refs/tags/$tag" <<< "$remote_tags"; then
               echo "::error::Release tag $tag already exists. Use a new version; existing tags are never overwritten."
               exit 1
             fi
