@@ -101,6 +101,21 @@ jobs:
         with:
           name: PauzeNews ${{ github.ref_name }}
           generate_release_notes: true
+          body: |
+            # PauzeNews ${{ github.ref_name }}
+
+            ## Highlights
+            - Compact, full-width story cards with clean READ and SAVE actions.
+            - Publisher articles open inside PauzeNews instead of jumping to an external browser.
+            - In-reader navigation supports both publisher-page history and Android Back.
+            - Android package version is aligned with the release.
+
+            ## Install
+            Download the APK attached to this release and install it on Android. If Android rejects an in-place update because the signing certificate differs from an older CI build, back up any important local data before uninstalling the older copy.
+
+            ## Links
+            - PauzeX Developments: https://pauzex.devs.surf/
+            - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
           overwrite_files: true
           fail_on_unmatched_files: true
           files: bin/*.apk
