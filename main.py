@@ -338,7 +338,13 @@ class NewsCard(GlassSurface):
         read.width = dp(116)
         read.bind(on_release=lambda *_: self.app.open_article(article))
 
-        saved = self.app.store.is_bookmarked(article["id"])
+        # list_articles() includes bookmark state, avoiding a separate SQLite
+        # connection for every card during normal feed rendering.
+        saved = (
+            bool(article["is_bookmarked"])
+            if "is_bookmarked" in article
+            else self.app.store.is_bookmarked(article["id"])
+        )
         bookmark = _action_button(
             "SAVED" if saved else "SAVE",
             background=ACCENT_DARK if saved else PANEL,
@@ -408,6 +414,11 @@ class PauzeNewsApp(App):
         self.articles = []
         self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
+        # Retention must still run after offline periods when no feed succeeds.
+        try:
+            self.store.prune_cache()
+        except Exception:
+            Logger.exception("PauzeNews: cache retention cleanup failed")
 
         # Compact, top-aligned app chrome; the stories receive the remaining
         # height and scroll vertically like a conventional news reader.
