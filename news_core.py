@@ -25,6 +25,7 @@ except Exception:
 
 REQUEST_TIMEOUT = 12
 MAX_ITEMS_PER_FEED = 35
+MAX_FEED_BYTES = 2 * 1024 * 1024
 
 # Google News RSS is an unauthenticated, key-free headline feed. It includes
 # each article's publisher in its <source> element, which parse_feed preserves.
@@ -204,7 +205,9 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                 headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
             )
             with urlopen(request, timeout=REQUEST_TIMEOUT, context=SSL_CONTEXT) as response:
-                content = response.read()
+                content = response.read(MAX_FEED_BYTES + 1)
+        if len(content) > MAX_FEED_BYTES:
+            raise ValueError(f"Feed response exceeds {MAX_FEED_BYTES} byte limit")
         return selected_category, source_name, parse_feed(content, selected_category, source_name)
 
     # The home feed spans every category. Fetch feeds concurrently so one slow
@@ -213,13 +216,15 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=min(4, len(sources))) as pool:
             futures = {pool.submit(fetch_one, source): source for source in sources}
-            results = []
+            results_by_source = {}
             for future in as_completed(futures):
                 source = futures[future]
                 try:
-                    results.append(future.result())
+                    results_by_source[source] = future.result()
                 except Exception as exc:
                     errors.append(f"{source[1]}: {type(exc).__name__}")
+            # Preserve configured category/source priority regardless of network timing.
+            results = [results_by_source[source] for source in sources if source in results_by_source]
     else:
         results = []
         for source in sources:
@@ -228,11 +233,18 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
             except Exception as exc:
                 errors.append(f"{source[1]}: {type(exc).__name__}")
 
+    by_url = {}
     for selected_category, source_name, articles in results:
         for article in articles:
-            if article["url"] not in seen_urls:
-                seen_urls.add(article["url"])
+            url = article["url"]
+            if url not in by_url:
+                article["categories"] = [article["category"]]
+                by_url[url] = article
                 collected.append(article)
+            else:
+                existing = by_url[url]
+                if selected_category not in existing["categories"]:
+                    existing["categories"].append(selected_category)
 
     collected.sort(key=article_sort_key, reverse=True)
     return collected, errors
@@ -282,6 +294,18 @@ class ArticleStore:
                         (timestamp, row["id"]),
                     )
             db.execute("""
+                CREATE TABLE IF NOT EXISTS article_categories (
+                    article_id TEXT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+                    category TEXT NOT NULL,
+                    PRIMARY KEY (article_id, category)
+                )
+            """)
+            # Migrate the legacy single-category field into the category index.
+            db.execute("""
+                INSERT OR IGNORE INTO article_categories (article_id, category)
+                SELECT id, category FROM articles WHERE category != ''
+            """)
+            db.execute("""
                 CREATE TABLE IF NOT EXISTS bookmarks (
                     article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
                     saved_at INTEGER NOT NULL
@@ -289,6 +313,7 @@ class ArticleStore:
             """)
 
     def save_articles(self, articles: Iterable[dict]) -> None:
+        articles = list(articles)
         with self._connect() as db:
             db.executemany("""
                 INSERT INTO articles
@@ -303,7 +328,19 @@ class ArticleStore:
                     published=excluded.published,
                     published_at=excluded.published_at,
                     fetched_at=excluded.fetched_at
-            """, list(articles))
+            """, articles)
+            category_rows = []
+            for article in articles:
+                categories = article.get("categories") or [article.get("category", "")]
+                category_rows.extend(
+                    (article["id"], category)
+                    for category in categories
+                    if category
+                )
+            db.executemany(
+                "INSERT OR IGNORE INTO article_categories (article_id, category) VALUES (?, ?)",
+                category_rows,
+            )
 
     def list_articles(self, category: str = "For You", query: str = "", bookmarks_only: bool = False, limit: int = 150) -> list[dict]:
         sql = "SELECT a.* FROM articles a"
@@ -312,7 +349,10 @@ class ArticleStore:
             sql += " JOIN bookmarks b ON b.article_id = a.id"
         clauses = []
         if category not in {"For You", "Saved"}:
-            clauses.append("a.category = ?")
+            clauses.append(
+                "EXISTS (SELECT 1 FROM article_categories ac "
+                "WHERE ac.article_id = a.id AND ac.category = ?)"
+            )
             params.append(category)
         if query.strip():
             clauses.append("(a.title LIKE ? OR a.summary LIKE ? OR a.source LIKE ?)")
