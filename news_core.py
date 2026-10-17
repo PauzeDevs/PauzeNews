@@ -271,6 +271,16 @@ class ArticleStore:
             article_columns = {row["name"] for row in db.execute("PRAGMA table_info(articles)")}
             if "published_at" not in article_columns:
                 db.execute("ALTER TABLE articles ADD COLUMN published_at INTEGER NOT NULL DEFAULT 0")
+            # Backfill publication timestamps for cached rows from older versions.
+            for row in db.execute(
+                "SELECT id, published FROM articles WHERE published_at = 0 AND published != ''"
+            ).fetchall():
+                timestamp = published_timestamp(row["published"])
+                if timestamp:
+                    db.execute(
+                        "UPDATE articles SET published_at = ? WHERE id = ?",
+                        (timestamp, row["id"]),
+                    )
             db.execute("""
                 CREATE TABLE IF NOT EXISTS bookmarks (
                     article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
@@ -310,7 +320,8 @@ class ArticleStore:
             params.extend([term, term, term])
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY a.published_at DESC, a.fetched_at DESC LIMIT ?"
+        order_by = "b.saved_at DESC" if bookmarks_only else "a.published_at DESC, a.fetched_at DESC"
+        sql += f" ORDER BY {order_by} LIMIT ?"
         params.append(max(1, min(int(limit), 500)))
         with self._connect() as db:
             return [dict(row) for row in db.execute(sql, params).fetchall()]
