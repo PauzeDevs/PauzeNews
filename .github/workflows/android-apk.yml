@@ -103,3 +103,37 @@ jobs:
             - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
 
             **Verification note:** The APK is attached only after the Android build and APK output check succeed. Physical-device verification is recommended for installation and publisher-specific WebView behavior.
+
+      - name: Publish v1.0.3-rc.1 pre-release
+        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[pre-release]')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.3-rc.1
+          name: PauzeNews v1.0.3-rc.1 — Horizontal Feed Preview
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: bin/*.apk
+          body: |
+            # PauzeNews v1.0.3-rc.1 — Horizontal Feed Preview
+
+            This pre-release packages the latest editorial feed and article-reader improvements for Android evaluation.
+
+            ## Highlights
+            - Browse headlines in a horizontal, swipeable story rail.
+            - Larger story cards with clearer spacing for headlines, summaries, publisher names, and publication times.
+            - Open a story in the native article reader or use **OPEN ↗** to continue in the system browser.
+            - Error and empty-feed states are sized for the story rail and retain a retry action when refreshing is available.
+
+            ## Build notes
+            - Built by GitHub Actions with Python 3.11, Java 17, Buildozer, and python-for-android.
+            - The workflow verifies that an APK was produced before publishing this release.
+            - Android target API 34; minimum API 24; APK includes arm64-v8a and armeabi-v7a.
+            - The separate Python test workflow runs module compilation and unit tests for this commit.
+
+            ## Install
+            Download the APK attached to this pre-release and install it on an Android device. Android may ask you to allow your browser or file manager to install unknown apps. If a device rejects an in-place update because its signing certificate differs from an older CI build, back up important local data before uninstalling the older copy.
+
+            This is a pre-release build. Physical-device installation and publisher-specific WebView behavior still need hands-on verification.
