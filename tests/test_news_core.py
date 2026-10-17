@@ -113,14 +113,17 @@ class FeedParsingTests(unittest.TestCase):
     def test_saved_articles_are_ordered_by_bookmark_time(self):
         with tempfile.TemporaryDirectory() as directory:
             store = ArticleStore(Path(directory) / "saved.sqlite3")
-            items = parse_feed(RSS, "World", "Test Publisher")
-            store.save_articles(items)
-            article_id = items[0]["id"]
-            store.toggle_bookmark(article_id)
+            first = parse_feed(RSS, "World", "Test Publisher")[0]
+            second = dict(first)
+            second.update(id="second-article", url="https://example.com/second", title="Second headline")
+            store.save_articles([first, second])
+            store.toggle_bookmark(first["id"])
+            store.toggle_bookmark(second["id"])
             with sqlite3.connect(store.db_path) as db:
-                db.execute("UPDATE bookmarks SET saved_at = 12345 WHERE article_id = ?", (article_id,))
+                db.execute("UPDATE bookmarks SET saved_at = 100 WHERE article_id = ?", (first["id"],))
+                db.execute("UPDATE bookmarks SET saved_at = 200 WHERE article_id = ?", (second["id"],))
             saved = store.list_articles(bookmarks_only=True)
-            self.assertEqual(saved[0]["id"], article_id)
+            self.assertEqual([row["id"] for row in saved], ["second-article", first["id"]])
 
     def test_unknown_category_returns_error_without_network(self):
         session = Mock()
