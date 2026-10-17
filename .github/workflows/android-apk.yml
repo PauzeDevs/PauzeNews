@@ -49,16 +49,51 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install "Cython==0.29.36" buildozer
 
+      - name: Prepare release metadata
+        id: release
+        shell: bash
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          release_type=""
+          version=""
+          if [[ "$COMMIT_MESSAGE" =~ \[release[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+            release_type="stable"
+            version="${BASH_REMATCH[1]}"
+          elif [[ "$COMMIT_MESSAGE" =~ \[pre-release[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+)\] ]]; then
+            release_type="prerelease"
+            version="${BASH_REMATCH[1]}"
+          fi
+
+          if [[ -n "$release_type" ]]; then
+            tag="v$version"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "::error::Release tag $tag already exists. Use a new version; existing tags are never overwritten."
+              exit 1
+            fi
+            echo "type=$release_type" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+            # Keep Android's versionName aligned with the explicitly requested release.
+            sed -i "s/^version = .*/version = $version/" buildozer.spec
+            echo "Preparing $release_type release $tag"
+          else
+            echo "No explicit release marker found; this run will build and verify only."
+            echo "type=none" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build debug APK
         shell: bash
         run: |
-          # GitHub's default shell enables pipefail, which incorrectly fails
-          # when 'yes' receives SIGPIPE after Buildozer has consumed its prompts.
-          # Preserve the pipeline's rightmost command status (Buildozer's status).
+          # Preserve Buildozer's exit status when 'yes' receives SIGPIPE.
           set +o pipefail
           yes | buildozer -v android debug
 
       - name: Verify APK output
+        id: apk
         shell: bash
         run: |
           apk="$(find bin -maxdepth 1 -type f -name '*.apk' -print -quit)"
@@ -66,74 +101,66 @@ jobs:
             echo "::error::Buildozer finished without producing an APK"
             exit 1
           fi
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
           ls -lh "$apk"
+          sha256sum "$apk"
 
-      - name: Publish stable v1.0.2 release
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
+      - name: Publish stable release
+        if: github.ref == 'refs/heads/main' && steps.release.outputs.type == 'stable'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.2
-          name: PauzeNews v1.0.2 — Gold UI & In-App Reader
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: PauzeNews v${{ steps.release.outputs.version }}
           target_commitish: ${{ github.sha }}
           prerelease: false
           make_latest: true
-          overwrite_files: true
           fail_on_unmatched_files: true
-          files: bin/*.apk
+          files: ${{ steps.apk.outputs.path }}
           body: |
-            # PauzeNews v1.0.2 — Gold UI & In-App Reader
+            # PauzeNews v${{ steps.release.outputs.version }}
 
-            A reader-focused update to PauzeNews, with a refined editorial layout and a more resilient native article reader.
+            This release was built by GitHub Actions from the exact source commit linked below.
 
-            ## Highlights
-            - A distinct lead-story card with a gold accent rail and stronger visual hierarchy.
-            - Publisher and publication time are separated to prevent cramped, truncated metadata.
-            - Cleaner headline sizing, summary spacing, and action-button labels.
-            - Article pages open in a dedicated native Android dialog above Kivy's rendering surface.
-            - Android Back navigates publisher history or returns to headlines.
-            - If native WebView setup is unavailable, PauzeNews attempts to open the validated article link in the system browser.
-            - Android package version aligned to 1.0.2.
+            ## Included
+            - Updated mobile editorial feed and story presentation.
+            - Publication-time-aware headline ordering and local article cache migration.
+            - Guarded category refreshes so stale requests cannot replace the selected feed.
+            - Current RSS/Atom parser, bookmark store, and article-reader implementation.
 
-            ## Installation
-            Download the APK attached to this release and install it on Android. If Android rejects an in-place update because the signing certificate differs from an older CI build, back up important local data before uninstalling the older copy.
+            ## Build and verification
+            - Built with the repository's Android workflow (Python 3.11, Java 17, Buildozer).
+            - APK output was checked before release publication.
+            - A successful CI build does not replace physical-device installation and article-reader testing.
 
             ## Links
             - PauzeX Developments: https://pauzex.devs.surf/
             - Developer profile: https://github.com/PauzeDevs
             - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
+            - Source commit: https://github.com/PauzeDevs/PauzeNews/commit/${{ github.sha }}
 
-            **Verification note:** The APK is attached only after the Android build and APK output check succeed. Physical-device verification is recommended for installation and publisher-specific WebView behavior.
-
-      - name: Publish v1.0.3-rc.1 pre-release
-        if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[pre-release]')
+      - name: Publish pre-release
+        if: github.ref == 'refs/heads/main' && steps.release.outputs.type == 'prerelease'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.3-rc.1
-          name: PauzeNews v1.0.3-rc.1 — Horizontal Feed Preview
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: PauzeNews v${{ steps.release.outputs.version }} — Preview
           target_commitish: ${{ github.sha }}
           prerelease: true
           make_latest: false
-          overwrite_files: true
           fail_on_unmatched_files: true
-          files: bin/*.apk
+          files: ${{ steps.apk.outputs.path }}
           body: |
-            # PauzeNews v1.0.3-rc.1 — Horizontal Feed Preview
+            # PauzeNews v${{ steps.release.outputs.version }} — Preview
 
-            This pre-release packages the latest editorial feed and article-reader improvements for Android evaluation.
+            Preview build for evaluation. This release was built from the source commit linked below.
 
-            ## Highlights
-            - Browse headlines in a horizontal, swipeable story rail.
-            - Larger story cards with clearer spacing for headlines, summaries, publisher names, and publication times.
-            - Open a story in the native article reader or use **OPEN ↗** to continue in the system browser.
-            - Error and empty-feed states are sized for the story rail and retain a retry action when refreshing is available.
+            ## Build and verification
+            - Built by GitHub Actions with Python 3.11, Java 17, and Buildozer.
+            - APK output was checked before release publication.
+            - Physical-device installation, scrolling, article-reader behavior, and Android Back handling still require hands-on verification.
 
-            ## Build notes
-            - Built by GitHub Actions with Python 3.11, Java 17, Buildozer, and python-for-android.
-            - The workflow verifies that an APK was produced before publishing this release.
-            - Android target API 34; minimum API 24; APK includes arm64-v8a and armeabi-v7a.
-            - The separate Python test workflow runs module compilation and unit tests for this commit.
-
-            ## Install
-            Download the APK attached to this pre-release and install it on an Android device. Android may ask you to allow your browser or file manager to install unknown apps. If a device rejects an in-place update because its signing certificate differs from an older CI build, back up important local data before uninstalling the older copy.
-
-            This is a pre-release build. Physical-device installation and publisher-specific WebView behavior still need hands-on verification.
+            ## Links
+            - PauzeX Developments: https://pauzex.devs.surf/
+            - Developer profile: https://github.com/PauzeDevs
+            - PauzeNews source: https://github.com/PauzeDevs/PauzeNews
+            - Source commit: https://github.com/PauzeDevs/PauzeNews/commit/${{ github.sha }}
