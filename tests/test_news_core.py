@@ -70,6 +70,11 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["source"], "Example Publisher")
 
+    def test_parser_rejects_oversized_and_dtd_xml(self):
+        self.assertEqual(parse_feed(b"x" * (2 * 1024 * 1024 + 1), "World", "Test"), [])
+        dtd = b'<!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel/></rss>'
+        self.assertEqual(parse_feed(dtd, "World", "Test"), [])
+
     def test_parser_returns_empty_for_malformed_xml(self):
         self.assertEqual(parse_feed(b"<rss><channel><item>", "World", "Broken"), [])
 
@@ -137,8 +142,8 @@ class FeedParsingTests(unittest.TestCase):
 
     def test_oversized_feed_is_rejected(self):
         response = Mock()
-        response.content = b"x" * (2 * 1024 * 1024 + 1)
         response.raise_for_status.return_value = None
+        response.iter_content.return_value = [b"x" * (2 * 1024 * 1024), b"x"]
         session = Mock()
         session.get.return_value = response
         articles, errors = fetch_category("World", session=session)
@@ -155,7 +160,7 @@ class FeedParsingTests(unittest.TestCase):
 
     def test_fetch_category_sends_timeout_and_user_agent(self):
         response = Mock()
-        response.content = RSS
+        response.iter_content.return_value = [RSS]
         response.raise_for_status.return_value = None
         session = Mock()
         session.get.return_value = response
@@ -169,11 +174,12 @@ class FeedParsingTests(unittest.TestCase):
             FEEDS["World"][0][1],
             timeout=12,
             headers={"User-Agent": "PauzeNews/0.1 (+RSS reader)"},
+            stream=True,
         )
 
     def test_one_failed_source_does_not_discard_other_sources(self):
         good = Mock()
-        good.content = RSS
+        good.iter_content.return_value = [RSS]
         good.raise_for_status.return_value = None
         bad = Mock()
         bad.raise_for_status.side_effect = RuntimeError("feed unavailable")
