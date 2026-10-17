@@ -855,7 +855,7 @@ class PauzeNewsApp(App):
             self._article_webview = None
             self._article_back_listener = None
             self._article_key_listener = None
-        self._article_dialog_key_listener = None
+            self._article_dialog_key_listener = None
 
             # If native WebView setup is unavailable on this device, do not
             # strand the user at a dead READ button: attempt the system browser.
