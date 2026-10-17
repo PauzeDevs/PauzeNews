@@ -125,6 +125,26 @@ class FeedParsingTests(unittest.TestCase):
             saved = store.list_articles(bookmarks_only=True)
             self.assertEqual([row["id"] for row in saved], ["second-article", first["id"]])
 
+    def test_article_can_belong_to_multiple_categories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "categories.sqlite3")
+            article = parse_feed(RSS, "World", "Test Publisher")[0]
+            article["categories"] = ["World", "Technology"]
+            store.save_articles([article])
+            self.assertEqual(len(store.list_articles(category="World")), 1)
+            self.assertEqual(len(store.list_articles(category="Technology")), 1)
+
+    def test_oversized_feed_is_rejected(self):
+        response = Mock()
+        response.content = b"x" * (2 * 1024 * 1024 + 1)
+        response.raise_for_status.return_value = None
+        session = Mock()
+        session.get.return_value = response
+        articles, errors = fetch_category("World", session=session)
+        self.assertEqual(articles, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("ValueError", errors[0])
+
     def test_unknown_category_returns_error_without_network(self):
         session = Mock()
         articles, errors = fetch_category("Made Up Category", session=session)
