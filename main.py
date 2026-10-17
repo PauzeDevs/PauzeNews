@@ -110,7 +110,7 @@ class GlassSurface(BoxLayout):
 
 
 def _text_label(text, *, color=TEXT, font_size="12sp", bold=False, height=None,
-                text_size=None, halign="left", valign="middle"):
+                width=None, size_hint_x=1, text_size=None, halign="left", valign="middle"):
     label = Label(
         text=text,
         color=color,
@@ -118,10 +118,13 @@ def _text_label(text, *, color=TEXT, font_size="12sp", bold=False, height=None,
         bold=bold,
         halign=halign,
         valign=valign,
+        size_hint_x=size_hint_x,
         size_hint_y=None,
     )
     if height is not None:
         label.height = height
+    if width is not None:
+        label.width = width
     if text_size is not None:
         label.text_size = text_size
     return label
@@ -215,12 +218,13 @@ class NewsCard(GlassSurface):
         self.featured = featured
         super().__init__(
             orientation="vertical",
-            spacing=dp(4),
-            padding=[dp(12), dp(9), dp(12), dp(9)],
+            spacing=dp(7),
+            padding=[dp(16), dp(13), dp(16), dp(13)],
             surface_color=PANEL_RAISED if featured else PANEL,
             radius=dp(17 if featured else 15),
-            size_hint_y=None,
-            height=dp(170 if featured and summary else 154 if summary else 126),
+            size_hint=(None, None),
+            width=max(dp(286), min(Window.width * 0.82, dp(420))),
+            height=dp(198 if summary else 170),
             **kwargs,
         )
         self.article = article
@@ -244,7 +248,7 @@ class NewsCard(GlassSurface):
                 font_size="9sp",
                 bold=True,
                 height=dp(13),
-                text_size=(max(dp(180), Window.width - dp(56)), dp(13)),
+                text_size=(max(dp(180), self.width - dp(32)), dp(13)),
             ))
 
         meta = BoxLayout(
@@ -261,7 +265,7 @@ class NewsCard(GlassSurface):
             font_size="9sp",
             bold=True,
             height=dp(16),
-            text_size=(max(dp(150), Window.width - dp(165)), dp(16)),
+            text_size=(max(dp(130), self.width - dp(126)), dp(16)),
         ))
         meta.add_widget(_text_label(
             _published_label(article.get("published", "")),
@@ -280,7 +284,7 @@ class NewsCard(GlassSurface):
             font_size="15sp" if featured else "14sp",
             bold=True,
             height=dp(42),
-            text_size=(max(dp(180), Window.width - dp(56)), dp(42)),
+            text_size=(max(dp(210), self.width - dp(30)), dp(42)),
             valign="top",
         ))
 
@@ -290,7 +294,7 @@ class NewsCard(GlassSurface):
                 color=MUTED,
                 font_size="11sp",
                 height=dp(30),
-                text_size=(max(dp(180), Window.width - dp(56)), dp(30)),
+                text_size=(max(dp(210), self.width - dp(30)), dp(30)),
                 valign="top",
             ))
 
@@ -349,6 +353,7 @@ class PauzeNewsApp(App):
         self._article_back_listener = None
         self._article_key_listener = None
         self._article_dialog_key_listener = None
+        self._article_external_listener = None
         self.category = "For You"
         self.show_saved = False
         self.loading = False
@@ -461,13 +466,18 @@ class PauzeNewsApp(App):
         root.add_widget(category_scroll)
 
         feed_heading = BoxLayout(
-            orientation="vertical",
+            orientation="horizontal",
             size_hint_y=None,
-            height=dp(39),
+            height=dp(44),
+            spacing=dp(8),
+        )
+        feed_copy = BoxLayout(
+            orientation="vertical",
+            size_hint_x=1,
             spacing=dp(1),
         )
-        feed_heading.add_widget(_text_label(
-            "LATEST STORIES",
+        feed_copy.add_widget(_text_label(
+            "THE DAILY BRIEFING",
             color=ACCENT,
             font_size="10sp",
             bold=True,
@@ -481,22 +491,40 @@ class PauzeNewsApp(App):
             height=dp(20),
             text_size=(max(dp(220), Window.width - dp(40)), dp(20)),
         )
-        feed_heading.add_widget(self.status)
+        feed_copy.add_widget(self.status)
+        feed_heading.add_widget(feed_copy)
+        feed_heading.add_widget(_text_label(
+            "SWIPE  →",
+            color=MUTED,
+            font_size="9sp",
+            bold=True,
+            height=dp(20),
+            text_size=(dp(66), dp(20)),
+            halign="right",
+        ))
         root.add_widget(feed_heading)
 
+        # Horizontal story rail: consistent editorial tiles are browsed left
+        # to right. The rest of the screen remains fixed to avoid a nested,
+        # awkward vertical-scroll experience on compact Android screens.
         self.scroll = ScrollView(
-            do_scroll_x=False,
-            do_scroll_y=True,
-            bar_width=dp(3),
-            scroll_type=["bars", "content"],
+            do_scroll_x=True,
+            do_scroll_y=False,
+            bar_width=0,
+            scroll_type=["content"],
+            size_hint_y=None,
+            height=dp(226),
+            effect_cls="ScrollEffect",
         )
         self.card_list = BoxLayout(
-            orientation="vertical",
-            spacing=dp(10),
-            padding=[0, dp(2), 0, dp(12)],
+            orientation="horizontal",
+            spacing=dp(12),
+            padding=[dp(1), dp(2), dp(18), dp(12)],
+            size_hint_x=None,
             size_hint_y=None,
+            height=dp(214),
         )
-        self.card_list.bind(minimum_height=self.card_list.setter("height"))
+        self.card_list.bind(minimum_width=self.card_list.setter("width"))
         self.scroll.add_widget(self.card_list)
         root.add_widget(self.scroll)
 
@@ -609,8 +637,10 @@ class PauzeNewsApp(App):
                 message,
                 color=MUTED,
                 font_size="12sp",
-                height=dp(84),
-                text_size=(max(dp(220), Window.width - dp(48)), dp(84)),
+                size_hint_x=None,
+                width=max(dp(260), Window.width * 0.78),
+                height=dp(160),
+                text_size=(max(dp(240), Window.width * 0.72), dp(160)),
                 halign="center",
             ))
             if not self.loading and not self.show_saved:
@@ -620,6 +650,8 @@ class PauzeNewsApp(App):
                     color=ACCENT,
                     height=dp(44),
                 )
+                retry.size_hint_x = None
+                retry.width = dp(140)
                 retry.bind(on_release=lambda *_: self.refresh_news())
                 self.card_list.add_widget(retry)
             return
@@ -632,8 +664,10 @@ class PauzeNewsApp(App):
                 "Load more headlines",
                 background=ACCENT_DARK,
                 color=ACCENT,
-                height=dp(46),
+                height=dp(48),
             )
+            more.size_hint_x = None
+            more.width = dp(180)
             more.bind(on_release=self._load_more)
             self.card_list.add_widget(more)
 
@@ -816,6 +850,37 @@ class PauzeNewsApp(App):
             self._article_back_listener = BackClickListener(self)
             self._article_key_listener = ReaderKeyListener(self)
             back.setOnClickListener(self._article_back_listener)
+
+            open_external = TextView(activity)
+            open_external.setText("OPEN ↗")
+            open_external.setTextColor(Color.parseColor("#DDB66B"))
+            open_external.setTextSize(11)
+            open_external.setGravity(Gravity.CENTER)
+            open_external.setClickable(True)
+            open_external.setFocusable(True)
+            toolbar.addView(open_external, LinearLayout.LayoutParams(px(70), px(56)))
+
+            class ExternalClickListener(PythonJavaClass):
+                __javainterfaces__ = ["android/view/View$OnClickListener"]
+                __javacontext__ = "app"
+
+                def __init__(self, target_activity, target_url):
+                    super().__init__()
+                    self.target_activity = target_activity
+                    self.target_url = target_url
+
+                @java_method("(Landroid/view/View;)V")
+                def onClick(self, _view):
+                    try:
+                        Intent = autoclass("android.content.Intent")
+                        Uri = autoclass("android.net.Uri")
+                        intent = Intent(Intent.ACTION_VIEW, Uri.parse(self.target_url))
+                        self.target_activity.startActivity(intent)
+                    except Exception:
+                        Logger.exception("PauzeNews: unable to open article externally")
+
+            self._article_external_listener = ExternalClickListener(activity, url)
+            open_external.setOnClickListener(self._article_external_listener)
             webview.setFocusableInTouchMode(True)
             webview.setOnKeyListener(self._article_key_listener)
 
@@ -856,6 +921,7 @@ class PauzeNewsApp(App):
             self._article_back_listener = None
             self._article_key_listener = None
             self._article_dialog_key_listener = None
+            self._article_external_listener = None
 
             # If native WebView setup is unavailable on this device, do not
             # strand the user at a dead READ button: attempt the system browser.
@@ -892,6 +958,7 @@ class PauzeNewsApp(App):
         self._article_back_listener = None
         self._article_key_listener = None
         self._article_dialog_key_listener = None
+        self._article_external_listener = None
 
         try:
             if dialog is not None:
