@@ -32,7 +32,7 @@ PauzeNews is a Python-first news reader built with **Kivy**. It brings topic-bas
 
 The interface pairs near-black and charcoal surfaces with a restrained metallic-gold accent, high-contrast typography, rounded topic pills, and compact full-width story cards. Its visual direction takes cues from Apple Developer's clarity and hierarchy without copying Apple's branding. The Android layout reserves safe space around system bars and renders a small first batch to keep startup lightweight.
 
-> **Release verification:** Official APKs are provided through GitHub Releases. Python CI validates source code; Android packaging only runs for an explicitly pushed version tag. Physical-device installation and reader behavior should also be verified.
+> **Release verification:** Official APKs are provided through GitHub Releases. Every push to `main` builds and checks an APK; commits marked `[release]` publish a versioned GitHub Release. Physical-device installation and reader behavior should also be verified.
 
 ## Features
 
@@ -40,7 +40,7 @@ The interface pairs near-black and charcoal surfaces with a restrained metallic-
 - **No API key required:** Google News RSS topic feeds; NASA remains a secondary Science source.
 - **Publisher attribution:** Uses source metadata when supplied by a feed.
 - **Search:** Filter cached headlines by title, publisher, or summary.
-- **In-app article reader:** Open publisher pages inside PauzeNews, navigate page history, and return to headlines with Back.
+- **In-app article reader:** Open publisher pages in a dedicated native Android reader, navigate page history, and return to headlines with Back. If WebView initialization fails on a device, the app attempts to open the story in the system browser.
 - **Bookmarks:** Save stories locally using SQLite.
 - **Offline-friendly cache:** Previously fetched headlines may remain available when refresh fails.
 - **Honest error states:** Feed failures are shown instead of inventing headlines.

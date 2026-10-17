@@ -1,7 +1,7 @@
 name: Android APK
 
-# Normal code changes run lightweight Python checks only.
-# Android packaging runs only for an explicitly marked release commit on main.
+# Every push to main builds and verifies an Android APK.
+# Only commits marked [release] publish a versioned GitHub Release.
 on:
   push:
     branches:
@@ -68,12 +68,12 @@ jobs:
           fi
           ls -lh "$apk"
 
-      - name: Publish stable v1.0.1 release
+      - name: Publish stable v1.0.2 release
         if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
-          name: PauzeNews v1.0.1 — Gold UI & In-App Reader
+          tag_name: v1.0.2
+          name: PauzeNews v1.0.2 — Gold UI & In-App Reader
           target_commitish: ${{ github.sha }}
           prerelease: false
           make_latest: true
@@ -81,16 +81,18 @@ jobs:
           fail_on_unmatched_files: true
           files: bin/*.apk
           body: |
-            # PauzeNews v1.0.1 — Gold UI & In-App Reader
+            # PauzeNews v1.0.2 — Gold UI & In-App Reader
 
-            A quality-focused update to PauzeNews, with a premium charcoal-and-gold editorial identity and in-app article reading.
+            A reader-focused update to PauzeNews, with a refined editorial layout and a more resilient native article reader.
 
             ## Highlights
-            - Premium near-black and charcoal surfaces with warm metallic-gold accents.
-            - Rounded topic pills and action controls without unsupported icon glyphs.
-            - Compact, full-width story cards with a clearer editorial hierarchy.
-            - Publisher pages open inside PauzeNews with page-history and Android Back navigation.
-            - Android package version aligned to the source version in this tag.
+            - A distinct lead-story card with a gold accent rail and stronger visual hierarchy.
+            - Publisher and publication time are separated to prevent cramped, truncated metadata.
+            - Cleaner headline sizing, summary spacing, and action-button labels.
+            - Article pages open in a dedicated native Android dialog above Kivy's rendering surface.
+            - Android Back navigates publisher history or returns to headlines.
+            - If native WebView setup is unavailable, PauzeNews attempts to open the validated article link in the system browser.
+            - Android package version aligned to 1.0.2.
 
             ## Installation
             Download the APK attached to this release and install it on Android. If Android rejects an in-place update because the signing certificate differs from an older CI build, back up important local data before uninstalling the older copy.

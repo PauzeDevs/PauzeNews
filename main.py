@@ -225,6 +225,17 @@ class NewsCard(GlassSurface):
         )
         self.article = article
         self.app = app
+        self._lead_rail = None
+        if featured:
+            with self.canvas.before:
+                Color(ACCENT[0], ACCENT[1], ACCENT[2], 0.95)
+                self._lead_rail = RoundedRectangle(
+                    pos=(self.x + dp(2), self.y + dp(14)),
+                    size=(dp(3), max(dp(1), self.height - dp(28))),
+                    radius=[dp(2)],
+                )
+            self.bind(pos=self._sync_lead_rail, size=self._sync_lead_rail)
+            self._sync_lead_rail()
 
         if featured:
             self.add_widget(_text_label(
@@ -318,6 +329,12 @@ class NewsCard(GlassSurface):
         actions.add_widget(bookmark)
         self.add_widget(actions)
 
+    def _sync_lead_rail(self, *_):
+        if self._lead_rail is not None:
+            self._lead_rail.pos = (self.x + dp(2), self.y + dp(14))
+            self._lead_rail.size = (dp(3), max(dp(1), self.height - dp(28)))
+
+
 class PauzeNewsApp(App):
     title = "PauzeNews"
 
@@ -331,6 +348,7 @@ class PauzeNewsApp(App):
         self._article_webview = None
         self._article_back_listener = None
         self._article_key_listener = None
+        self._article_dialog_key_listener = None
         self.category = "For You"
         self.show_saved = False
         self.loading = False
@@ -779,6 +797,22 @@ class PauzeNewsApp(App):
                         return True
                     return False
 
+            class DialogKeyListener(PythonJavaClass):
+                __javainterfaces__ = ["android/content/DialogInterface$OnKeyListener"]
+                __javacontext__ = "app"
+
+                def __init__(self, app):
+                    super().__init__()
+                    self.app = app
+
+                @java_method("(Landroid/content/DialogInterface;ILandroid/view/KeyEvent;)Z")
+                def onKey(self, _dialog, key_code, event):
+                    # Keep Android Back behavior consistent inside the native reader window.
+                    if key_code == 4 and event.getAction() == 0:
+                        self.app._reader_back()
+                        return True
+                    return False
+
             self._article_back_listener = BackClickListener(self)
             self._article_key_listener = ReaderKeyListener(self)
             back.setOnClickListener(self._article_back_listener)
@@ -788,6 +822,8 @@ class PauzeNewsApp(App):
             dialog = Dialog(activity)
             dialog.setCancelable(True)
             dialog.setCanceledOnTouchOutside(False)
+            self._article_dialog_key_listener = DialogKeyListener(self)
+            dialog.setOnKeyListener(self._article_dialog_key_listener)
             dialog.setContentView(reader)
             dialog.show()
             window = dialog.getWindow()
@@ -819,6 +855,7 @@ class PauzeNewsApp(App):
             self._article_webview = None
             self._article_back_listener = None
             self._article_key_listener = None
+        self._article_dialog_key_listener = None
 
             # If native WebView setup is unavailable on this device, do not
             # strand the user at a dead READ button: attempt the system browser.
@@ -854,6 +891,7 @@ class PauzeNewsApp(App):
         self._article_webview = None
         self._article_back_listener = None
         self._article_key_listener = None
+        self._article_dialog_key_listener = None
 
         try:
             if dialog is not None:
