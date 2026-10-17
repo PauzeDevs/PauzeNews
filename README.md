@@ -6,7 +6,6 @@
   <img src="https://readme-typing-svg.demolab.com?font=Inter&weight=600&size=22&duration=2600&pause=700&color=4C8DFF&center=true&vCenter=true&width=680&lines=PauzeNews" alt="Animated header: PauzeNews">
 </p>
 
-
 ### The world, in context.
 
 A premium, Android-first news reader with a charcoal canvas, warm metallic-gold accents, crisp editorial cards, and a clean, Apple Developer-inspired visual hierarchy.
