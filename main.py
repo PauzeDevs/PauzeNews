@@ -110,7 +110,7 @@ class GlassSurface(BoxLayout):
 
 
 def _text_label(text, *, color=TEXT, font_size="12sp", bold=False, height=None,
-                text_size=None, halign="left", valign="middle"):
+                width=None, size_hint_x=1, text_size=None, halign="left", valign="middle"):
     label = Label(
         text=text,
         color=color,
@@ -118,10 +118,13 @@ def _text_label(text, *, color=TEXT, font_size="12sp", bold=False, height=None,
         bold=bold,
         halign=halign,
         valign=valign,
+        size_hint_x=size_hint_x,
         size_hint_y=None,
     )
     if height is not None:
         label.height = height
+    if width is not None:
+        label.width = width
     if text_size is not None:
         label.text_size = text_size
     return label
@@ -618,7 +621,7 @@ class PauzeNewsApp(App):
                 message,
                 color=MUTED,
                 font_size="12sp",
-                size_hint=(None, None),
+                size_hint_x=None,
                 width=max(dp(260), Window.width * 0.78),
                 height=dp(160),
                 text_size=(max(dp(240), Window.width * 0.72), dp(160)),
