@@ -75,6 +75,15 @@ class FeedParsingTests(unittest.TestCase):
         dtd = b'<!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel/></rss>'
         self.assertEqual(parse_feed(dtd, "World", "Test"), [])
 
+    def test_parser_rejects_dtd_and_entity_declarations(self):
+        dtd = b'<!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel/></rss>'
+        spaced = b'<! DOCTYPE rss><rss><channel/></rss>'
+        self.assertEqual(parse_feed(dtd, "World", "Test"), [])
+        self.assertEqual(parse_feed(spaced, "World", "Test"), [])
+
+    def test_parser_rejects_oversized_input(self):
+        self.assertEqual(parse_feed(b"x" * (2 * 1024 * 1024 + 1), "World", "Test"), [])
+
     def test_parser_returns_empty_for_malformed_xml(self):
         self.assertEqual(parse_feed(b"<rss><channel><item>", "World", "Broken"), [])
 
@@ -150,6 +159,35 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(articles, [])
         self.assertEqual(len(errors), 1)
         self.assertIn("ValueError", errors[0])
+        response.close.assert_called_once()
+
+    def test_search_treats_like_wildcards_as_literal_characters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "search.sqlite3")
+            percent = parse_feed(RSS, "World", "Test Publisher")[0]
+            percent.update(id="percent", url="https://example.com/percent", title="100% accurate")
+            underscore = dict(percent, id="underscore", url="https://example.com/underscore", title="one_two")
+            ordinary = dict(percent, id="ordinary", url="https://example.com/ordinary", title="100 percent accurate")
+            store.save_articles([percent, underscore, ordinary])
+            self.assertEqual([x["id"] for x in store.list_articles(query="%")], ["percent"])
+            self.assertEqual([x["id"] for x in store.list_articles(query="_")], ["underscore"])
+
+    def test_cache_retention_preserves_bookmarks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "retention.sqlite3")
+            saved = parse_feed(RSS, "World", "Test Publisher")[0]
+            old = dict(saved, id="old", url="https://example.com/old", title="Old story")
+            store.save_articles([saved, old])
+            store.toggle_bookmark(old["id"])
+            cutoff = int(__import__("time").time()) - 31 * 24 * 60 * 60
+            with sqlite3.connect(store.db_path) as db:
+                db.execute("UPDATE articles SET fetched_at = ? WHERE id = ?", (cutoff, saved["id"]))
+                db.execute("UPDATE articles SET fetched_at = ? WHERE id = ?", (cutoff, old["id"]))
+            store.save_articles([])
+            ids = {x["id"] for x in store.list_articles()}
+            self.assertNotIn(saved["id"], ids)
+            self.assertIn(old["id"], ids)
+            self.assertEqual(len(store.list_articles(bookmarks_only=True)), 1)
 
     def test_unknown_category_returns_error_without_network(self):
         session = Mock()
@@ -170,6 +208,7 @@ class FeedParsingTests(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(len(articles), 1)
         self.assertEqual(articles[0]["category"], "World")
+        response.close.assert_called_once()
         session.get.assert_called_once_with(
             FEEDS["World"][0][1],
             timeout=12,
