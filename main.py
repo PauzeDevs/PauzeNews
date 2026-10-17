@@ -414,11 +414,6 @@ class PauzeNewsApp(App):
         self.articles = []
         self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
-        # Retention must still run after offline periods when no feed succeeds.
-        try:
-            self.store.prune_cache()
-        except Exception:
-            Logger.exception("PauzeNews: cache retention cleanup failed")
 
         # Compact, top-aligned app chrome; the stories receive the remaining
         # height and scroll vertically like a conventional news reader.
@@ -624,6 +619,12 @@ class PauzeNewsApp(App):
             self.refresh_news()
 
     def refresh_news(self):
+        # Run retention before the fetch so stale cache is cleaned even when
+        # every upstream feed is offline; do not prune during schema migration.
+        try:
+            self.store.prune_cache()
+        except Exception:
+            Logger.exception("PauzeNews: cache retention cleanup failed")
         # Each request gets a generation token. Only the newest request may
         # update the cache/UI, preventing stale category results from winning.
         self._refresh_generation += 1
