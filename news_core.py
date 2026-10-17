@@ -6,6 +6,8 @@ import html
 import sqlite3
 import ssl
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
@@ -64,6 +66,31 @@ def _clean(value: object) -> str:
 def _safe_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def published_timestamp(value: str) -> int:
+    """Convert common RSS/Atom publication dates to Unix seconds; return 0 if unknown."""
+    if not value:
+        return 0
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    try:
+        return int(parsed.timestamp())
+    except (ValueError, OverflowError, OSError):
+        return 0
+
+
+def article_sort_key(article: dict) -> tuple[int, int]:
+    """Sort by publisher publication time, then fetch time for undated/tied stories."""
+    published_at = int(article.get("published_at") or published_timestamp(article.get("published", "")))
+    return published_at, int(article.get("fetched_at") or 0)
 
 
 def parse_feed(content: bytes | str, category: str, source_name: str) -> list[dict]:
@@ -137,6 +164,7 @@ def parse_feed(content: bytes | str, category: str, source_name: str) -> list[di
             "source": _clean(child_text(entry, {"source"})) or _clean(source_name) or _clean(urlparse(url).netloc),
             "category": category,
             "published": published,
+            "published_at": published_timestamp(published),
             "fetched_at": int(time.time()),
         })
     return articles
@@ -206,7 +234,7 @@ def fetch_category(category: str, session=None) -> tuple[list[dict], list[str]]:
                 seen_urls.add(article["url"])
                 collected.append(article)
 
-    collected.sort(key=lambda item: item["fetched_at"], reverse=True)
+    collected.sort(key=article_sort_key, reverse=True)
     return collected, errors
 
 
@@ -234,9 +262,15 @@ class ArticleStore:
                     source TEXT NOT NULL DEFAULT '',
                     category TEXT NOT NULL DEFAULT '',
                     published TEXT NOT NULL DEFAULT '',
+                    published_at INTEGER NOT NULL DEFAULT 0,
                     fetched_at INTEGER NOT NULL DEFAULT 0
                 )
             """)
+            # Existing installs need an additive migration; CREATE TABLE IF NOT EXISTS
+            # does not add columns to a database created by an older app version.
+            article_columns = {row["name"] for row in db.execute("PRAGMA table_info(articles)")}
+            if "published_at" not in article_columns:
+                db.execute("ALTER TABLE articles ADD COLUMN published_at INTEGER NOT NULL DEFAULT 0")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS bookmarks (
                     article_id TEXT PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
@@ -248,15 +282,16 @@ class ArticleStore:
         with self._connect() as db:
             db.executemany("""
                 INSERT INTO articles
-                    (id, title, url, summary, source, category, published, fetched_at)
+                    (id, title, url, summary, source, category, published, published_at, fetched_at)
                 VALUES
-                    (:id, :title, :url, :summary, :source, :category, :published, :fetched_at)
+                    (:id, :title, :url, :summary, :source, :category, :published, :published_at, :fetched_at)
                 ON CONFLICT(id) DO UPDATE SET
                     title=excluded.title,
                     summary=excluded.summary,
                     source=excluded.source,
                     category=excluded.category,
                     published=excluded.published,
+                    published_at=excluded.published_at,
                     fetched_at=excluded.fetched_at
             """, list(articles))
 
@@ -275,7 +310,7 @@ class ArticleStore:
             params.extend([term, term, term])
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY a.fetched_at DESC LIMIT ?"
+        sql += " ORDER BY a.published_at DESC, a.fetched_at DESC LIMIT ?"
         params.append(max(1, min(int(limit), 500)))
         with self._connect() as db:
             return [dict(row) for row in db.execute(sql, params).fetchall()]
