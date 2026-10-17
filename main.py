@@ -248,7 +248,7 @@ class NewsCard(GlassSurface):
                 font_size="9sp",
                 bold=True,
                 height=dp(13),
-                text_size=(max(dp(180), Window.width - dp(56)), dp(13)),
+                text_size=(max(dp(180), self.width - dp(32)), dp(13)),
             ))
 
         meta = BoxLayout(
@@ -353,6 +353,7 @@ class PauzeNewsApp(App):
         self._article_back_listener = None
         self._article_key_listener = None
         self._article_dialog_key_listener = None
+        self._article_external_listener = None
         self.category = "For You"
         self.show_saved = False
         self.loading = False
@@ -465,13 +466,18 @@ class PauzeNewsApp(App):
         root.add_widget(category_scroll)
 
         feed_heading = BoxLayout(
-            orientation="vertical",
+            orientation="horizontal",
             size_hint_y=None,
-            height=dp(39),
+            height=dp(44),
+            spacing=dp(8),
+        )
+        feed_copy = BoxLayout(
+            orientation="vertical",
+            size_hint_x=1,
             spacing=dp(1),
         )
-        feed_heading.add_widget(_text_label(
-            "LATEST STORIES",
+        feed_copy.add_widget(_text_label(
+            "THE DAILY BRIEFING",
             color=ACCENT,
             font_size="10sp",
             bold=True,
@@ -485,12 +491,22 @@ class PauzeNewsApp(App):
             height=dp(20),
             text_size=(max(dp(220), Window.width - dp(40)), dp(20)),
         )
-        feed_heading.add_widget(self.status)
+        feed_copy.add_widget(self.status)
+        feed_heading.add_widget(feed_copy)
+        feed_heading.add_widget(_text_label(
+            "SWIPE  →",
+            color=MUTED,
+            font_size="9sp",
+            bold=True,
+            height=dp(20),
+            text_size=(dp(66), dp(20)),
+            halign="right",
+        ))
         root.add_widget(feed_heading)
 
-        # Horizontal story rail: each story is a consistent editorial tile.
-        # Vertical scrolling is intentionally disabled in the feed so the main
-        # interaction is a left-to-right browse, with category pills above.
+        # Horizontal story rail: consistent editorial tiles are browsed left
+        # to right. The rest of the screen remains fixed to avoid a nested,
+        # awkward vertical-scroll experience on compact Android screens.
         self.scroll = ScrollView(
             do_scroll_x=True,
             do_scroll_y=False,
@@ -834,6 +850,37 @@ class PauzeNewsApp(App):
             self._article_back_listener = BackClickListener(self)
             self._article_key_listener = ReaderKeyListener(self)
             back.setOnClickListener(self._article_back_listener)
+
+            open_external = TextView(activity)
+            open_external.setText("OPEN ↗")
+            open_external.setTextColor(Color.parseColor("#DDB66B"))
+            open_external.setTextSize(11)
+            open_external.setGravity(Gravity.CENTER)
+            open_external.setClickable(True)
+            open_external.setFocusable(True)
+            toolbar.addView(open_external, LinearLayout.LayoutParams(px(70), px(56)))
+
+            class ExternalClickListener(PythonJavaClass):
+                __javainterfaces__ = ["android/view/View$OnClickListener"]
+                __javacontext__ = "app"
+
+                def __init__(self, target_activity, target_url):
+                    super().__init__()
+                    self.target_activity = target_activity
+                    self.target_url = target_url
+
+                @java_method("(Landroid/view/View;)V")
+                def onClick(self, _view):
+                    try:
+                        Intent = autoclass("android.content.Intent")
+                        Uri = autoclass("android.net.Uri")
+                        intent = Intent(Intent.ACTION_VIEW, Uri.parse(self.target_url))
+                        self.target_activity.startActivity(intent)
+                    except Exception:
+                        Logger.exception("PauzeNews: unable to open article externally")
+
+            self._article_external_listener = ExternalClickListener(activity, url)
+            open_external.setOnClickListener(self._article_external_listener)
             webview.setFocusableInTouchMode(True)
             webview.setOnKeyListener(self._article_key_listener)
 
@@ -874,6 +921,7 @@ class PauzeNewsApp(App):
             self._article_back_listener = None
             self._article_key_listener = None
             self._article_dialog_key_listener = None
+            self._article_external_listener = None
 
             # If native WebView setup is unavailable on this device, do not
             # strand the user at a dead READ button: attempt the system browser.
@@ -910,6 +958,7 @@ class PauzeNewsApp(App):
         self._article_back_listener = None
         self._article_key_listener = None
         self._article_dialog_key_listener = None
+        self._article_external_listener = None
 
         try:
             if dialog is not None:
