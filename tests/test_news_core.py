@@ -81,6 +81,13 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(parse_feed(dtd, "World", "Test"), [])
         self.assertEqual(parse_feed(spaced, "World", "Test"), [])
 
+    def test_parser_rejects_dtd_after_long_leading_comment(self):
+        # The document is below the parser's size cap but places the DTD beyond
+        # the old 64 KiB prefix scan.
+        prefix = b"<!--" + (b"x" * 65540) + b"-->"
+        dtd = b'<!DOCTYPE rss [<!ENTITY x "boom">]><rss><channel/></rss>'
+        self.assertEqual(parse_feed(prefix + dtd, "World", "Test"), [])
+
     def test_parser_rejects_oversized_input(self):
         self.assertEqual(parse_feed(b"x" * (2 * 1024 * 1024 + 1), "World", "Test"), [])
 
@@ -124,6 +131,16 @@ class FeedParsingTests(unittest.TestCase):
             self.assertEqual(len(store.list_articles(bookmarks_only=True)), 1)
             self.assertFalse(store.toggle_bookmark(article_id))
             self.assertFalse(store.is_bookmarked(article_id))
+
+    def test_saved_category_filters_bookmarks_without_extra_flag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArticleStore(Path(directory) / "saved-category.sqlite3")
+            items = parse_feed(RSS, "World", "Test Publisher")
+            store.save_articles(items)
+            self.assertEqual(store.list_articles(category="Saved"), [])
+            store.toggle_bookmark(items[0]["id"])
+            saved = store.list_articles(category="Saved")
+            self.assertEqual([row["id"] for row in saved], [items[0]["id"]])
 
     def test_saved_articles_are_ordered_by_bookmark_time(self):
         with tempfile.TemporaryDirectory() as directory:
