@@ -30,15 +30,15 @@ from kivy.uix.textinput import TextInput
 
 from news_core import ALL_CATEGORIES, ArticleStore, fetch_category
 
-# Matte graphite with cool, restrained highlights.
-BG = (0.025, 0.029, 0.036, 1)
-PANEL = (0.075, 0.085, 0.103, 0.96)
-PANEL_RAISED = (0.095, 0.106, 0.127, 0.96)
-ACCENT = (0.36, 0.64, 1.0, 1)
-ACCENT_DARK = (0.10, 0.19, 0.31, 1)
-TEXT = (0.95, 0.96, 0.98, 1)
-MUTED = (0.62, 0.66, 0.72, 1)
-EDGE = (0.40, 0.47, 0.58, 0.34)
+# PauzeNews premium charcoal-and-gold palette: restrained, high-contrast, editorial.
+BG = (0.027, 0.027, 0.029, 1)          # near-black canvas
+PANEL = (0.075, 0.075, 0.079, 1)       # raised charcoal surface
+PANEL_RAISED = (0.105, 0.105, 0.110, 1)
+ACCENT = (0.86, 0.68, 0.34, 1)         # warm metallic gold
+ACCENT_DARK = (0.19, 0.145, 0.065, 1)  # subdued gold wash
+TEXT = (0.96, 0.96, 0.97, 1)
+MUTED = (0.63, 0.63, 0.66, 1)
+EDGE = (0.52, 0.39, 0.18, 0.34)       # subtle warm border
 
 
 def _shorten(value: str, limit: int) -> str:
@@ -64,7 +64,7 @@ class GlassSurface(BoxLayout):
             self._lower_edge = Line(
                 points=[self.x, self.y, self.x + self.width, self.y], width=0.8
             )
-            Color(0.78, 0.84, 0.94, 0.20)
+            Color(0.95, 0.77, 0.40, 0.16)
             self._shine = Line(
                 points=[
                     self.x + dp(20), self.y + self.height - dp(1),
@@ -120,6 +120,40 @@ def _action_button(text, *, background, color=TEXT, font_size="11sp", bold=True,
     if height is not None:
         button.height = height
     return button
+
+
+class TopicButton(Button):
+    """Rounded, restrained topic pill with a clear gold-selected state."""
+
+    def __init__(self, *, selected=False, **kwargs):
+        self.selected = bool(selected)
+        kwargs.setdefault("background_normal", "")
+        kwargs.setdefault("background_down", "")
+        kwargs.setdefault("background_color", (0, 0, 0, 0))
+        kwargs.setdefault("color", BG if self.selected else MUTED)
+        kwargs.setdefault("font_size", "11sp")
+        kwargs.setdefault("bold", self.selected)
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            self._pill_color = Color(*self._fill_color())
+            self._pill = RoundedRectangle(
+                pos=self.pos, size=self.size, radius=[dp(12)]
+            )
+        self.bind(pos=self._sync_pill, size=self._sync_pill)
+
+    def _fill_color(self):
+        return ACCENT if self.selected else PANEL
+
+    def _sync_pill(self, *_):
+        self._pill.pos = self.pos
+        self._pill.size = self.size
+        self._pill_color.rgba = self._fill_color()
+
+    def set_selected(self, selected):
+        self.selected = bool(selected)
+        self.color = BG if self.selected else MUTED
+        self.bold = self.selected
+        self._sync_pill()
 
 
 class NewsCard(GlassSurface):
@@ -229,45 +263,45 @@ class PauzeNewsApp(App):
         self.visible_limit = 8
         self.store = ArticleStore(str(Path(self.user_data_dir) / "pauzenews.sqlite3"))
 
-        # Extra top and bottom clearance keeps content away from Android's
-        # status/navigation areas on devices where SDL2 reports edge overlap.
+        # Leave safe clearance around Android system bars while keeping the
+        # screen content compact and aligned like a premium editorial product.
         root = BoxLayout(
             orientation="vertical",
-            padding=[dp(14), dp(12), dp(14), dp(10)],
+            padding=[dp(16), dp(24), dp(16), dp(12)],
             spacing=dp(10),
         )
 
         header = BoxLayout(
             orientation="horizontal",
             size_hint_y=None,
-            height=dp(58),
-            spacing=dp(10),
+            height=dp(62),
+            spacing=dp(12),
         )
         brand = BoxLayout(orientation="vertical", spacing=0)
         brand.add_widget(_text_label(
             "PauzeNews",
             color=TEXT,
-            font_size="27sp",
+            font_size="28sp",
             bold=True,
             height=dp(38),
-            text_size=(max(dp(170), Window.width - dp(150)), dp(38)),
+            text_size=(max(dp(170), Window.width - dp(160)), dp(38)),
         ))
         brand.add_widget(_text_label(
             "THE WORLD, IN CONTEXT.",
-            color=MUTED,
+            color=ACCENT,
             font_size="9sp",
             bold=True,
-            height=dp(19),
-            text_size=(max(dp(170), Window.width - dp(150)), dp(19)),
+            height=dp(18),
+            text_size=(max(dp(170), Window.width - dp(160)), dp(18)),
         ))
         header.add_widget(brand)
 
         refresh = _action_button(
-            "Refresh",
+            "REFRESH",
             background=ACCENT,
             color=BG,
-            font_size="12sp",
-            height=dp(44),
+            font_size="10sp",
+            height=dp(38),
         )
         refresh.size_hint_x = None
         refresh.width = dp(88)
@@ -284,7 +318,7 @@ class PauzeNewsApp(App):
             radius=dp(16),
         )
         self.search = TextInput(
-            hint_text="Search headlines or publishers",
+            hint_text="Search headlines, topics, or publishers",
             multiline=False,
             background_normal="",
             background_active="",
@@ -302,7 +336,7 @@ class PauzeNewsApp(App):
 
         category_scroll = ScrollView(
             size_hint_y=None,
-            height=dp(44),
+            height=dp(42),
             do_scroll_y=False,
             do_scroll_x=True,
             bar_width=0,
@@ -311,23 +345,20 @@ class PauzeNewsApp(App):
         category_row = BoxLayout(
             size_hint_x=None,
             size_hint_y=None,
-            height=dp(40),
-            spacing=dp(7),
+            height=dp(36),
+            spacing=dp(8),
         )
         category_row.bind(minimum_width=category_row.setter("width"))
         self.category_buttons = {}
         for category in ALL_CATEGORIES + ["Saved"]:
             selected = category == self.category
-            button = Button(
+            button = TopicButton(
                 text=category,
+                selected=selected,
                 size_hint_x=None,
-                width=dp(max(80, len(category) * 7.1 + 28)),
-                background_normal="",
-                background_down="",
-                background_color=ACCENT_DARK if selected else PANEL,
-                color=ACCENT if selected else MUTED,
-                bold=selected,
-                font_size="11sp",
+                size_hint_y=None,
+                height=dp(34),
+                width=dp(max(78, len(category) * 7.0 + 28)),
             )
             button.bind(on_release=lambda instance, c=category: self.select_category(c))
             self.category_buttons[category] = button
@@ -335,14 +366,29 @@ class PauzeNewsApp(App):
         category_scroll.add_widget(category_row)
         root.add_widget(category_scroll)
 
+        feed_heading = BoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            height=dp(39),
+            spacing=dp(1),
+        )
+        feed_heading.add_widget(_text_label(
+            "LATEST STORIES",
+            color=ACCENT,
+            font_size="10sp",
+            bold=True,
+            height=dp(16),
+            text_size=(max(dp(220), Window.width - dp(40)), dp(16)),
+        ))
         self.status = _text_label(
             "Preparing your briefing…",
             color=MUTED,
-            font_size="11sp",
-            height=dp(24),
-            text_size=(max(dp(220), Window.width - dp(40)), dp(24)),
+            font_size="10sp",
+            height=dp(20),
+            text_size=(max(dp(220), Window.width - dp(40)), dp(20)),
         )
-        root.add_widget(self.status)
+        feed_heading.add_widget(self.status)
+        root.add_widget(feed_heading)
 
         self.scroll = ScrollView(
             do_scroll_x=False,
@@ -352,7 +398,7 @@ class PauzeNewsApp(App):
         )
         self.card_list = BoxLayout(
             orientation="vertical",
-            spacing=dp(11),
+            spacing=dp(10),
             padding=[0, dp(2), 0, dp(12)],
             size_hint_y=None,
         )
@@ -377,10 +423,7 @@ class PauzeNewsApp(App):
         self.visible_limit = 8
         self.show_saved = category == "Saved"
         for name, button in self.category_buttons.items():
-            selected = name == category
-            button.background_color = ACCENT_DARK if selected else PANEL
-            button.color = ACCENT if selected else MUTED
-            button.bold = selected
+            button.set_selected(name == category)
         self.render_articles()
         if not self.show_saved:
             self.refresh_news()
@@ -590,7 +633,7 @@ class PauzeNewsApp(App):
 
             back = TextView(activity)
             back.setText("BACK")
-            back.setTextColor(Color.parseColor("#70B0FF"))
+            back.setTextColor(Color.parseColor("#DDB66B"))
             back.setTextSize(12)
             back.setGravity(Gravity.CENTER)
             back.setClickable(True)
@@ -602,12 +645,12 @@ class PauzeNewsApp(App):
             heading.setGravity(Gravity.CENTER_VERTICAL)
             brand = TextView(activity)
             brand.setText("PAUZENEWS")
-            brand.setTextColor(Color.parseColor("#F2F5FA"))
+            brand.setTextColor(Color.parseColor("#F5F5F7"))
             brand.setTextSize(16)
             brand.setTypeface(None, 1)
             subtitle = TextView(activity)
             subtitle.setText(_shorten(title, 52))
-            subtitle.setTextColor(Color.parseColor("#9AA6B7"))
+            subtitle.setTextColor(Color.parseColor("#AAA6A0"))
             subtitle.setTextSize(11)
             subtitle.setSingleLine(True)
             heading.addView(brand, LinearLayout.LayoutParams(-1, px(25)))
