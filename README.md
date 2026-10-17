@@ -4,7 +4,7 @@
 
 ### The world, in context.
 
-A lightweight, Android-first news reader with a matte graphite interface, cool-blue highlights, and glass-inspired story cards.
+A premium, Android-first news reader with a charcoal canvas, warm metallic-gold accents, crisp editorial cards, and a clean, Apple Developer-inspired visual hierarchy.
 
 <p>
   <a href="https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml"><img alt="Python tests" src="https://github.com/PauzeDevs/PauzeNews/actions/workflows/tests.yml/badge.svg?branch=main"></a>
@@ -30,9 +30,9 @@ A lightweight, Android-first news reader with a matte graphite interface, cool-b
 
 PauzeNews is a Python-first news reader built with **Kivy**. It brings topic-based headlines into one Android-friendly interface, with local search, bookmarks, cached stories, publisher attribution, and links to original articles.
 
-The interface uses a dark matte graphite background, restrained blue highlights, softly outlined glass-like panels, and compact horizontal story cards. The Android layout reserves extra space around system bars and renders a small first batch to keep startup lightweight.
+The interface pairs near-black and charcoal surfaces with a restrained metallic-gold accent, high-contrast typography, rounded topic pills, and compact full-width story cards. Its visual direction takes cues from Apple Developer's clarity and hierarchy without copying Apple's branding. The Android layout reserves safe space around system bars and renders a small first batch to keep startup lightweight.
 
-> **Development status:** Early development. A successful CI build does not replace testing on a physical Android device. Official APK downloads are provided through GitHub Releases only.
+> **Release verification:** Official APKs are provided through GitHub Releases. Python CI validates source code; Android packaging only runs for an explicitly pushed version tag. Physical-device installation and reader behavior should also be verified.
 
 ## Features
 
@@ -44,7 +44,7 @@ The interface uses a dark matte graphite background, restrained blue highlights,
 - **Bookmarks:** Save stories locally using SQLite.
 - **Offline-friendly cache:** Previously fetched headlines may remain available when refresh fails.
 - **Honest error states:** Feed failures are shown instead of inventing headlines.
-- **Glass-inspired editorial UI:** Matte graphite surfaces, cool-blue highlights, softly outlined panels, horizontal story information, and compact action rails.
+- **Premium editorial UI:** Near-black and charcoal surfaces, warm gold highlights, softly outlined cards, rounded topic pills, and compact full-width story layouts inspired by Apple Developer's clean hierarchy.
 - **Android packaging:** Buildozer and python-for-android build the APK.
 - **Automated checks:** GitHub Actions compiles Python modules and runs unit tests.
 
