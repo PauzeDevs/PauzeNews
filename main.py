@@ -106,15 +106,45 @@ def _text_label(text, *, color=TEXT, font_size="12sp", bold=False, height=None,
     return label
 
 
+class RoundedActionButton(Button):
+    """Minimal rounded button with a custom surface and pressed state."""
+
+    def __init__(self, *, fill_color, radius=dp(10), **kwargs):
+        self.fill_color = tuple(fill_color)
+        self.corner_radius = radius
+        kwargs.setdefault("background_normal", "")
+        kwargs.setdefault("background_down", "")
+        kwargs.setdefault("background_color", (0, 0, 0, 0))
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            self._fill_instruction = Color(*self.fill_color)
+            self._shape = RoundedRectangle(
+                pos=self.pos, size=self.size, radius=[self.corner_radius]
+            )
+        self.bind(pos=self._sync_shape, size=self._sync_shape)
+        self.bind(on_press=self._show_pressed, on_release=self._show_released)
+
+    def _sync_shape(self, *_):
+        self._shape.pos = self.pos
+        self._shape.size = self.size
+        self._shape.radius = [self.corner_radius]
+
+    def _show_pressed(self, *_):
+        self._fill_instruction.rgba = tuple(
+            max(0.0, channel * 0.82) for channel in self.fill_color[:3]
+        ) + (self.fill_color[3],)
+
+    def _show_released(self, *_):
+        self._fill_instruction.rgba = self.fill_color
+
+
 def _action_button(text, *, background, color=TEXT, font_size="11sp", bold=True, height=None):
-    button = Button(
+    button = RoundedActionButton(
+        fill_color=background,
         text=text,
         color=color,
         font_size=font_size,
         bold=bold,
-        background_normal="",
-        background_down="",
-        background_color=background,
         size_hint_y=None,
     )
     if height is not None:
